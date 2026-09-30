@@ -1,0 +1,208 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 2rem;
+  background: #d4d4d4;
+}
+
+.gel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0;
+  width: min(100%, 42.25rem);
+  min-height: 11.125rem;
+  padding: 2rem 1rem;
+  border: 1px solid #46657d;
+  background: linear-gradient(#abc5d7, #7498b4);
+}
+
+.card {
+  padding: 2rem 1rem;
+  border: 1px solid #46657d;
+  background: linear-gradient(#abc5d7, #7498b4);
+}
+
+.gel {
+  --gel-mid: #7498b4;
+  --gel-rim: #46657d;
+
+  position: relative;
+  isolation: isolate;
+  min-height: 1.45rem;
+  padding: 0 1.4rem;
+  overflow: hidden;
+  border: 1px solid var(--gel-rim);
+  border-radius: 999px;
+  color: #111;
+  font:
+    400 0.75rem/1 Arial,
+    Helvetica,
+    sans-serif;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 50%);
+  background: linear-gradient(
+    to bottom,
+    hsl(from var(--gel-mid) h s calc(l * 0.7)),
+    var(--gel-mid)
+  );
+  box-shadow:
+    0 2px 2px rgb(0 0 0 / 45%),
+    0 0 0 1px rgb(0 0 0 / 45%);
+  cursor: pointer;
+  transition:
+    translate 70ms ease,
+    filter 100ms ease,
+    box-shadow 70ms ease;
+}
+
+.gel-button {
+  appearance: none;
+}
+
+.gel-button::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 1%;
+  right: 3px;
+  left: 3px;
+  height: 40%;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 55%);
+  pointer-events: none;
+  filter: blur(2px);
+  backdrop-filter: hue-rotate(15deg);
+}
+
+.gel-button::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  right: 5px;
+  bottom: 1px;
+  left: 5px;
+  height: 27%;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 32%);
+  pointer-events: none;
+  filter: blur(2px);
+}
+
+.gel:hover {
+  filter: saturate(1.12) brightness(1.08);
+}
+
+.gel-button:active {
+  translate: 0 2px;
+  filter: saturate(1.06) brightness(0.9);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 48%),
+    0 0 0 2px rgb(0 0 0 / 28%),
+    inset 0 3px 5px rgb(0 0 0 / 44%),
+    inset 0 -1px 2px rgb(255 255 255 / 50%);
+}
+
+.gel:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+}
+
+.gel-primary {
+  --gel-mid: #339ee0;
+  --gel-rim: #173d59;
+}
+
+.gel-danger {
+  --gel-mid: #e95d5d;
+  --gel-rim: #642121;
+}
+
+.gel-success {
+  --gel-mid: #10af58;
+  --gel-rim: #154c32;
+}
+
+.gel-input {
+  --gel-mid: #abc5d7;
+  --gel-rim: #46657d;
+
+  box-shadow:
+    0 -1px 1px rgba(0 0 0 / 20%),
+    0 1px 2px rgba(0 0 0 / 20%),
+    0 -5px 5px rgba(255 255 255 / 30%) inset;
+}
+
+.gel-input::placeholder {
+  color: var(--gel-rim);
+}
+
+.bevel-button {
+  --bevel-light: hsl(210deg 50% 80%);
+  --bevel-dark: hsl(210deg 50% 60%);
+  --bevel-border: hsl(210deg 30% 40%);
+
+  position: relative;
+  isolation: isolate;
+  min-width: 6rem;
+  padding: 5px 10px;
+  border: 1.5px solid var(--bevel-border);
+  appearance: none;
+  color: #000;
+  background: linear-gradient(
+    to bottom right,
+    var(--bevel-dark),
+    var(--bevel-light)
+  );
+  cursor: pointer;
+  transition:
+    translate 70ms ease,
+    filter 100ms ease,
+    box-shadow 70ms ease;
+}
+
+.bevel-button::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  display: block;
+  inset: 2.5px;
+  background: linear-gradient(
+    to bottom right,
+    var(--bevel-light),
+    var(--bevel-dark)
+  );
+  pointer-events: none;
+}
+
+.bevel-button:hover {
+  filter: brightness(1.08) saturate(1.08);
+}
+
+.bevel-button:active {
+  translate: 0 1px;
+  background: linear-gradient(
+    to bottom right,
+    var(--bevel-light),
+    var(--bevel-dark)
+  );
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 35%);
+}
+
+.bevel-button:active::before {
+  background:
+    linear-gradient(rgb(0 0 0 / 18%), rgb(0 0 0 / 18%)),
+    linear-gradient(to bottom right, var(--bevel-light), var(--bevel-dark));
+}
+
+.bevel-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
