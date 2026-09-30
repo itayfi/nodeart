@@ -3,13 +3,18 @@
 import { Radio as RadioPrimitive } from "@base-ui/react/radio"
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group"
 import { cn } from "cn"
+import { play } from "cuelume"
 
-function RadioGroup({ className, ...props }: RadioGroupPrimitive.Props) {
+function RadioGroup({ className, onValueChange, ...props }: RadioGroupPrimitive.Props) {
   return (
     <RadioGroupPrimitive
       data-slot="radio-group"
       className={cn("grid w-full gap-2", className)}
       {...props}
+      onValueChange={(value, details) => {
+        onValueChange?.(value, details)
+        if (!details.isCanceled) play("select", { emphasis: "subtle" })
+      }}
     />
   )
 }

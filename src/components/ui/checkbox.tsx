@@ -1,8 +1,9 @@
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 import { cn } from "cn"
 import { CheckIcon } from "lucide-react"
+import { play } from "cuelume"
 
-function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
+function Checkbox({ className, onCheckedChange, ...props }: CheckboxPrimitive.Root.Props) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
@@ -11,6 +12,10 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         className
       )}
       {...props}
+      onCheckedChange={(checked, details) => {
+        onCheckedChange?.(checked, details)
+        if (!details.isCanceled) play("toggle", { emphasis: "subtle", direction: checked ? "forward" : "back" })
+      }}
     >
       <CheckboxPrimitive.Indicator
         data-slot="checkbox-indicator"

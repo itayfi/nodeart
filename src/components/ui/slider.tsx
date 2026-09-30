@@ -1,5 +1,7 @@
 import { Slider as SliderPrimitive } from "@base-ui/react/slider"
 import { cn } from "cn"
+import { useRef } from "react"
+import { play } from "cuelume"
 
 function Slider({
   className,
@@ -7,8 +9,11 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  onValueChange,
   ...props
 }: SliderPrimitive.Root.Props) {
+  const lastCue = useRef(0)
+  const previous = useRef(value ?? defaultValue ?? min)
   const _values = Array.isArray(value)
     ? value
     : Array.isArray(defaultValue)
@@ -25,6 +30,19 @@ function Slider({
       max={max}
       thumbAlignment="edge"
       {...props}
+      onValueChange={(next, details) => {
+        onValueChange?.(next, details)
+        if (details.isCanceled) return
+        const before = Array.isArray(previous.current) ? previous.current : [previous.current]
+        const after = Array.isArray(next) ? next : [next]
+        const changedIndex = after.findIndex((v, index) => v !== before[index])
+        previous.current = next
+        const now = performance.now()
+        if (changedIndex >= 0 && now - lastCue.current >= 100) {
+          lastCue.current = now
+          play("select", { emphasis: "subtle", direction: after[changedIndex] > (before[changedIndex] ?? min) ? "forward" : "back" })
+        }
+      }}
     >
       <SliderPrimitive.Control className="relative flex w-full touch-none items-center select-none data-disabled:opacity-50 data-vertical:h-full data-vertical:min-h-40 data-vertical:w-auto data-vertical:flex-col">
         <SliderPrimitive.Track

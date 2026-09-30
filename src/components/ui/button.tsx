@@ -49,6 +49,8 @@ function Button({
     <ButtonPrimitive
       data-slot="button"
       data-variant={variant}
+      data-cuelume-tap=""
+      data-cuelume-emphasis={variant === "default" ? "normal" : "subtle"}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

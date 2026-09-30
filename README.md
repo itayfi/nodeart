@@ -1,6 +1,6 @@
 # Nodeart · Gel lab
 
-React + TypeScript + Vite, Tailwind CSS v4, shadcn/ui (Base UI / nova), Lucide icons, and React Flow.
+React + TypeScript + Vite, Tailwind CSS v4, shadcn/ui (Base UI / nova), Icons8 Flat Color category icons, Lucide action icons, and React Flow.
 
 Use pnpm:
 
@@ -20,8 +20,13 @@ src/App.tsx includes the component playground and React Flow custom nodes. Inter
 
 The starter uses a light glossy palette. For new components, add optical styling using their data-slot selectors in src/glossy.css. Avoid overwriting customized components with the CLI unless you intend to reapply the local changes.
 
+Interaction sounds use Cuelume, synthesized through Web Audio with no audio assets. The header Sound toggle persists the preference; volume defaults to 25%. Shared buttons and inputs use delegated attributes, while checkbox/radio/slider changes and React Flow interactions use semantic cues. Slider sounds are throttled to one per 100ms. No hover or page-load sounds. See https://cuelume-site.pages.dev/agents.md for cue selection and API guidance.
+
+Icons8 Flat Color icons are imported as SVG components from react-icons/fc and used for category markers through src/components/category-icon.tsx. Lucide supplies action icons and control indicators. Flat Color Icons are offered under MIT: https://github.com/icons8/flat-color-icons. The app retains an Icons8 credit and the default React Flow attribution.
+
 References:
 - https://ui.shadcn.com/docs/installation/vite
 - https://ui.shadcn.com/docs/changelog/2026-07-base-ui-default
 - https://base-ui.com/react/components/slider
 - https://reactflow.dev/learn/customization/custom-nodes
+
