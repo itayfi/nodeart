@@ -14,7 +14,7 @@ Use spacing, typography, alignment, and grouping to communicate importance. Do n
 
 ## Surfaces and palette
 
-The page background is light cool grey (`#edf1f4`); the graph canvas is pure white (`#fff`). Three separate sections use the light blue card gradient, `linear-gradient(#c5d9e6, #9ab9cf)`: the project bar (the second top row), the node-library panel, and the preview/inspector panel. Each section restarts its own gradient and has a rounded surface rim. The scrollable node list inside the library is white with an inset border. Floating menus, dialogs, toasts, and graph nodes use the same card surface.
+The page background is light cool grey (`#edf1f4`); the graph canvas is pure white (`#fff`). Three separate sections use the light blue card gradient, `linear-gradient(#c5d9e6, #9ab9cf)`: the project bar (the second top row), the node-library panel, and the preview/inspector panel. Each section restarts its own gradient and has a rounded surface rim. The scrollable node list inside the library and the parameter editor area are white with an inset border. Floating menus, dialogs, toasts, and graph nodes use the same card surface.
 
 | Token | Value | Purpose |
 | --- | --- | --- |
@@ -37,6 +37,8 @@ Headers, transport controls, library groups, parameter rows, badges, and node he
 - **Checkboxes and radios:** opposing bevel gradients; checkboxes are square with softened corners and radios are round, including their inner bevel and selected dot.
 - **Nodes:** card gradient, readable title, spaced port/value rows, and purposeful sockets. Use a narrow category-colored top border to identify node families; keep header backgrounds on the card gradient. Selection uses an outline, not a new fill.
 - **Selects and menus:** shadcn/Base UI semantics with the shared blue surface. Hovered and keyboard-highlighted options use the primary button's blue gel gradient and glossy highlight, with a subtle rim. Include submenu triggers; disabled items retain their disabled treatment. This interactive state is an exception to the rule against using background colors for hierarchy.
+- **Node library items:** transparent, borderless action rows on the white list surface, using the same hover and keyboard-focus treatment as menu options. Keep native button activation and clear labels without the resting gel button surface.
+- **Projects dialog:** constrain the dialog to the dynamic viewport height; keep the heading, close button, and search/actions outside the scrollable project list. Use the same secondary icon close button as Help.
 
 ## Borders and separators
 
@@ -50,6 +52,7 @@ Every line must identify a surface edge, connection, interactive affordance, or 
 ## Icons, motion, and sound
 
 Use Lucide for actions and controls; use Icons8 Flat Color SVGs sparingly for category markers through `category-icon.tsx`. Keep clear labels and accessible names. Icons8 Flat Color does not require visible attribution; do not add attribution UI for this pack.
+Each node category has a unique icon from a shared mapping; use that same icon in library category headings, graph node titles, and selected-node properties.
 
 Animations should communicate touch: gentle gel compression, slider squish, and selection indicator pops. Respect `prefers-reduced-motion`; avoid ongoing decorative motion. Interaction sounds use Cuelume, chosen by job, kept subtle for frequent actions, and controlled by the persistent Sound toggle. Never add hover sounds or a node-drop sound.
 
@@ -62,5 +65,6 @@ Before delivering a UI change, inspect the live app: graph is white; panels use 
 Keep the graph free of top and bottom toolbar bars. Example graphs, JSON downloads, and GLSL access live in the Project options dropdown beside Open, Save, and Export. Do not add decorative avatars or a persistent status footer.
 
 The library is wider to fit readable node names; omit decorative footer captions so the list uses the available space. Keep the preview/properties split usable on narrow screens as well as desktop.
+Above the stacked mobile layout, the workspace follows the dynamic viewport height without a fixed minimum page height; scroll the library, preview, and properties internally. Preserve page scrolling when mobile content stacks vertically.
 
 Preview controls occupy one row: play/pause, reset, elapsed time, and quality selection. Show resolution only in the quality options; omit redundant playback text and separate resolution/ratio captions.

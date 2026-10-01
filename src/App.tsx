@@ -82,7 +82,7 @@ import {
   type GraphType,
 } from "./graph"
 import { SoundToggle } from "@/components/sound-toggle"
-import { CategoryIcon } from "@/components/category-icon"
+import { CategoryIcon, type CategoryIconName } from "@/components/category-icon"
 import {
   definitions,
   makeNode,
@@ -124,18 +124,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
       style={{ "--node-color": def.color } as CSSProperties}
     >
       <div className="node-heading flex items-center gap-2 rounded-t-xl px-3 py-3">
-        <CategoryIcon
-          name={
-            def.category === "Generators"
-              ? "generator"
-              : def.category === "Inputs"
-                ? "input"
-                : def.category === "Output"
-                  ? "output"
-                  : "material"
-          }
-          className="size-4"
-        />
+        <CategoryIcon name={def.category} className="size-4" />
         <span className="flex-1 text-[12px] font-semibold">{def.title}</span>
         <DropdownMenu
           onOpenChange={(open) => {
@@ -298,7 +287,14 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
   )
 }
 const nodeTypes = { art: ArtCard }
-const categories = ["Inputs", "Fields", "Math", "Color", "Generators", "Output"]
+const categories: CategoryIconName[] = [
+  "Inputs",
+  "Fields",
+  "Math",
+  "Color",
+  "Generators",
+  "Output",
+]
 function Workspace({ library }: { library: Library }) {
   const [initial] = useState(() =>
     library.projects.find((p) => p.id === library.activeId)!
@@ -671,7 +667,7 @@ function Workspace({ library }: { library: Library }) {
         types,
       }}
     >
-      <main className="app-shell flex h-dvh min-h-[680px] flex-col overflow-hidden max-[850px]:min-h-[640px] max-[600px]:h-auto max-[600px]:min-h-dvh max-[600px]:overflow-auto">
+      <main className="app-shell flex h-dvh min-h-0 flex-col overflow-hidden max-[600px]:h-auto max-[600px]:min-h-dvh max-[600px]:overflow-auto">
         <header className="app-header flex h-[68px] shrink-0 items-center justify-between gap-4 px-5">
           <div className="flex items-center gap-3">
             <span className="brand-orb">
@@ -903,25 +899,15 @@ function Workspace({ library }: { library: Library }) {
                   items.length > 0 && (
                     <section className="mb-7" key={category}>
                       <h3 className="mb-2 flex items-center gap-2 px-2 text-[12px] font-semibold tracking-[.13em] text-[#294d65] uppercase">
-                        <CategoryIcon
-                          name={
-                            category === "Generators"
-                              ? "generator"
-                              : category === "Inputs"
-                                ? "input"
-                                : category === "Output"
-                                  ? "output"
-                                  : "collection"
-                          }
-                          className="size-3.5"
-                        />
+                        <CategoryIcon name={category} className="size-3.5" />
                         {category}
                       </h3>
                       {items.map(([kind, d]) => (
                         <Button
                           key={kind}
                           variant="secondary"
-                          className="library-item mb-2 flex w-full justify-start gap-2.5 px-2 text-[12px]"
+                          data-slot="library-item"
+                          className="library-item mb-1 flex w-full justify-start gap-2.5 rounded-md px-2 text-[12px]"
                           title={d.description}
                           onClick={() => addNode(kind)}
                           data-cuelume-tap=""
@@ -1150,66 +1136,65 @@ function Workspace({ library }: { library: Library }) {
                     <>
                       <h3 className="mb-1 flex items-center gap-2 text-[14px] font-semibold">
                         <CategoryIcon
-                          name={
-                            selected.data.kind === "output"
-                              ? "output"
-                              : selected.data.kind === "ifs" ||
-                                  selected.data.kind === "wfc"
-                                ? "generator"
-                                : "material"
-                          }
+                          name={definitions[selected.data.kind].category}
                         />
                         {definitions[selected.data.kind].title}
                       </h3>
                       <p className="mb-5 text-[12px] leading-relaxed text-[#294d65]">
                         {definitions[selected.data.kind].description}
                       </p>
-                      {["image", "alpha"].includes(selected.data.kind) && (
-                        <ImageEditor
+                      <div className="parameters-surface rounded-lg p-4">
+                        {["image", "alpha"].includes(selected.data.kind) && (
+                          <ImageEditor
+                            key={selected.id}
+                            node={selected}
+                            nodes={nodes}
+                            onData={changeData}
+                            onAlpha={() => {
+                              const id = newNodeId(),
+                                alpha = makeNode(
+                                  "alpha",
+                                  id,
+                                  selected.position.x,
+                                  selected.position.y + 200
+                                )
+                              alpha.data.image = selected.data.image
+                              const coordinates = edges.find(
+                                (edge) =>
+                                  edge.target === selected.id &&
+                                  edge.targetHandle === "0"
+                              )
+                              setNodes((previous) => [...previous, alpha])
+                              if (coordinates)
+                                setEdges((previous) => [
+                                  ...previous,
+                                  {
+                                    ...coordinates,
+                                    id: newNodeId(),
+                                    target: id,
+                                  },
+                                ])
+                              setSelectedId(id)
+                              setDirty(true)
+                            }}
+                          />
+                        )}
+                        <ParameterEditor
                           key={selected.id}
                           node={selected}
                           nodes={nodes}
+                          edges={edges}
+                          onParam={changeParam}
                           onData={changeData}
-                          onAlpha={() => {
-                            const id = newNodeId(),
-                              alpha = makeNode(
-                                "alpha",
-                                id,
-                                selected.position.x,
-                                selected.position.y + 200
-                              )
-                            alpha.data.image = selected.data.image
-                            const coordinates = edges.find(
-                              (edge) =>
-                                edge.target === selected.id &&
-                                edge.targetHandle === "0"
+                          onSelect={setSelectedId}
+                          onDisconnect={(id) => {
+                            setEdges((previous) =>
+                              previous.filter((edge) => edge.id !== id)
                             )
-                            setNodes((previous) => [...previous, alpha])
-                            if (coordinates)
-                              setEdges((previous) => [
-                                ...previous,
-                                { ...coordinates, id: newNodeId(), target: id },
-                              ])
-                            setSelectedId(id)
                             setDirty(true)
                           }}
                         />
-                      )}
-                      <ParameterEditor
-                        key={selected.id}
-                        node={selected}
-                        nodes={nodes}
-                        edges={edges}
-                        onParam={changeParam}
-                        onData={changeData}
-                        onSelect={setSelectedId}
-                        onDisconnect={(id) => {
-                          setEdges((previous) =>
-                            previous.filter((edge) => edge.id !== id)
-                          )
-                          setDirty(true)
-                        }}
-                      />
+                      </div>
                       <div className="mt-5 flex gap-2">
                         <Button
                           disabled={selected.data.kind === "output"}

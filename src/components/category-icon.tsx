@@ -1,19 +1,23 @@
 import {
   FcEditImage,
   FcPicture,
-  FcTemplate,
+  FcLandscape,
+  FcCalculator,
   FcFlowChart,
   FcElectricalSensor,
 } from "react-icons/fc"
 import { cn } from "cn"
-const icons = {
-  material: FcEditImage,
-  output: FcPicture,
-  collection: FcTemplate,
-  generator: FcFlowChart,
-  input: FcElectricalSensor,
+import type { IconType } from "react-icons"
+import type { Category } from "../engine"
+const icons: Record<Category, IconType> = {
+  Inputs: FcElectricalSensor,
+  Fields: FcLandscape,
+  Math: FcCalculator,
+  Color: FcEditImage,
+  Generators: FcFlowChart,
+  Output: FcPicture,
 }
-export type CategoryIconName = keyof typeof icons
+export type CategoryIconName = Category
 export function CategoryIcon({
   name,
   className,

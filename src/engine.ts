@@ -1,5 +1,7 @@
 import { validateGraph, type GeneratorConfig } from "./graph.ts"
 import type { Edge, Node } from "@xyflow/react"
+export type Category =
+  "Inputs" | "Fields" | "Math" | "Color" | "Generators" | "Output"
 export type Kind =
   | "image"
   | "alpha"
@@ -57,7 +59,7 @@ type Param = {
 }
 type Def = {
   title: string
-  category: string
+  category: Category
   description: string
   inputs: string[]
   output: string
@@ -74,7 +76,7 @@ const p = (
 ): Param => ({ key, label, min, max, value, step })
 const d = (
   title: string,
-  category: string,
+  category: Category,
   description: string,
   inputs: string[],
   output: string,

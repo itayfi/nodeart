@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Copy, FolderOpen, Plus, Trash2, Upload } from "lucide-react"
+import { Copy, FolderOpen, Plus, Trash2, Upload, X } from "lucide-react"
 import type { LibraryProject } from "../project-library"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -41,13 +41,27 @@ export function ProjectBrowser({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="modal-surface !max-w-3xl">
-          <DialogTitle>Your projects</DialogTitle>
+        <DialogContent
+          showCloseButton={false}
+          className="modal-surface flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)]! max-w-3xl! flex-col overflow-hidden rounded-2xl p-6"
+        >
+          <div className="flex shrink-0 items-center justify-between gap-4">
+            <DialogTitle className="font-semibold">Your projects</DialogTitle>
+            <Button
+              autoFocus
+              variant="secondary"
+              size="icon-sm"
+              aria-label="Close dialog"
+              onClick={() => onOpenChange(false)}
+            >
+              <X />
+            </Button>
+          </div>
           <DialogDescription>
             Saved on this device. Changes save automatically; download graph
             JSON for a portable backup.
           </DialogDescription>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Input
               className="min-w-36 flex-1"
               placeholder="Search projects…"
@@ -64,7 +78,7 @@ export function ProjectBrowser({
               Import JSON
             </Button>
           </div>
-          <div className="grid max-h-[60vh] grid-cols-1 gap-5 overflow-y-auto p-1 sm:grid-cols-2 md:grid-cols-3">
+          <div className="grid min-h-0 grid-cols-1 gap-5 overflow-y-auto overscroll-contain p-1 sm:grid-cols-2 md:grid-cols-3">
             {filtered.map((project) => (
               <article key={project.id} className="space-y-2">
                 <Button
