@@ -49,11 +49,53 @@ export function parseProject(value: unknown): Project {
         throw new Error(`Invalid ${p.label}`)
       normalized[p.key] = v
     }
+    let image: ArtNode["data"]["image"]
+    if (data.image !== undefined) {
+      const asset = record(data.image)
+      if (
+        typeof asset.src !== "string" ||
+        asset.src.length > 24 * 1024 * 1024 ||
+        !/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(asset.src) ||
+        typeof asset.name !== "string" ||
+        typeof asset.width !== "number" ||
+        typeof asset.height !== "number" ||
+        !Number.isInteger(asset.width) ||
+        !Number.isInteger(asset.height) ||
+        asset.width < 1 ||
+        asset.height < 1 ||
+        asset.width > 2048 ||
+        asset.height > 2048
+      )
+        throw new Error("Invalid image asset")
+      image = {
+        src: asset.src,
+        name: asset.name.slice(0, 120),
+        width: asset.width,
+        height: asset.height,
+      }
+    }
+    let colors: string[] | undefined
+    if (data.colors !== undefined) {
+      if (
+        !Array.isArray(data.colors) ||
+        data.colors.length !== 4 ||
+        !data.colors.every(
+          (color) => typeof color === "string" && /^#[a-f0-9]{6}$/i.test(color)
+        )
+      )
+        throw new Error("Invalid palette colors")
+      colors = data.colors as string[]
+    }
     return {
       id: raw.id,
       type: "art",
       position: { x: position.x as number, y: position.y as number },
-      data: { kind, params: normalized },
+      data: {
+        kind,
+        params: normalized,
+        ...(image ? { image } : {}),
+        ...(colors ? { colors } : {}),
+      },
     }
   })
   if (nodes.filter((n) => n.data.kind === "output").length > 1)

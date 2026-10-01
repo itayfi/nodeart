@@ -1,5 +1,13 @@
-import { definitions, type ArtNode, type Kind } from "./engine.ts"
+import {
+  definitions,
+  parameterPorts,
+  defaultColors,
+  colorVector,
+  type ArtNode,
+  type Kind,
+} from "./engine.ts"
 import type { Edge, Connection } from "@xyflow/react"
+import { sampleImage } from "./image-assets.ts"
 export type Scope = "uniform" | "fragment"
 export type ValueType = "numeric" | "affine" | "ifs-set" | "tile" | "tile-set"
 export type GraphType = { type: ValueType; scope: Scope }
@@ -16,6 +24,7 @@ export type GeneratorConfig = {
   grid?: number
   transforms?: Affine[]
   tiles?: TileRule[]
+  bounds?: number[]
 }
 const structural: Partial<Record<Kind, ValueType>> = {
   affine: "affine",
@@ -24,24 +33,7 @@ const structural: Partial<Record<Kind, ValueType>> = {
   tileset: "tile-set",
 }
 export function parameterInput(kind: Kind, key: string): number | undefined {
-  const aliases: Record<string, string> = {
-    cx: "Center",
-    cy: "Center",
-    ax: "Start",
-    ay: "Start",
-    bx: "End",
-    by: "End",
-  }
-  const label =
-    kind === "box" && ["width", "height"].includes(key)
-      ? "Size"
-      : (aliases[key] ??
-        definitions[kind].params.find((p) => p.key === key)?.label)
-  const index = definitions[kind].inputs.findIndex(
-    (input) =>
-      input === label || input === label?.replace(/ fallback$| label$/, "")
-  )
-  return index < 0 ? undefined : index
+  return parameterPorts[kind][key]
 }
 export function inputSpec(
   kind: Kind,
@@ -56,6 +48,17 @@ export function inputSpec(
   return {
     types: ["numeric"],
     uniform:
+      (kind === "gradient" && index > 0) ||
+      (Object.values(parameterPorts[kind]).includes(index) &&
+        ![
+          "color",
+          "vector",
+          "add",
+          "subtract",
+          "multiply",
+          "divide",
+          "mix",
+        ].includes(kind)) ||
       kind === "affine" ||
       (kind === "tile" && index > 0) ||
       ((kind === "ifs" || kind === "wfc") && index > 1) ||
@@ -76,7 +79,14 @@ export function graphTypes(
     if (!node) throw new Error("A connected node is missing.")
     visiting.add(id)
     const kind = node.data.kind
-    let scope: Scope = ["uv", "previous", "ifs", "wfc"].includes(kind)
+    let scope: Scope = [
+      "uv",
+      "previous",
+      "ifs",
+      "wfc",
+      "image",
+      "alpha",
+    ].includes(kind)
       ? "fragment"
       : "uniform"
     const implicitCoordinates = [
@@ -220,17 +230,40 @@ export function numericEvaluator(nodes: ArtNode[], edges: Edge[]) {
       const node = byId.get(id)
       if (!node) throw new Error("Uniform input is missing.")
       visiting.add(id)
-      const { kind, params: p } = node.data
+      const { kind } = node.data
       const input = (i: number, fallback: V): V => {
         const source = connections.get(`${id}/${i}`)
         return source ? visit(source) : fallback
       }
       const scalar = (i: number, v: number) => input(i, vec(v))[0]
+      const p = { ...node.data.params }
+      for (const [key, port] of Object.entries(parameterPorts[kind])) {
+        const channel =
+          ["cy", "ay", "by"].includes(key) ||
+          (kind === "box" && key === "height")
+            ? 1
+            : 0
+        p[key] = input(port, vec(p[key]))[channel]
+      }
       let v: V
       switch (kind) {
         case "uv":
           v = uv
           break
+        case "image":
+        case "alpha": {
+          const coordinates = input(0, uv),
+            sampled = sampleImage(
+              node.data.image?.src,
+              coordinates[0],
+              coordinates[1]
+            )
+          v =
+            kind === "alpha"
+              ? vec(sampled[3])
+              : (sampled.slice(0, 3).map((value) => value * p.opacity) as V)
+          break
+        }
         case "time":
           v = vec(time * p.speed)
           break
@@ -410,6 +443,41 @@ export function numericEvaluator(nodes: ArtNode[], edges: Edge[]) {
           )
           break
         }
+        case "gradient": {
+          const t = clamp(scalar(0, 0) * p.frequency + p.offset) * 3
+          const segment = Math.min(2, Math.floor(t)),
+            fraction = t - segment
+          const colors = (node.data.colors ?? defaultColors).map((color, i) =>
+            input(i + 3, colorVector(color))
+          )
+          v = colors[segment].map((n, i) =>
+            mix(n, colors[segment + 1][i], fraction)
+          ) as V
+          break
+        }
+        case "composite": {
+          const a = input(0, vec(0)),
+            b = input(1, vec(1)),
+            mask = input(2, vec(1))
+          v = a.map((n, i) => {
+            const mode = Math.round(p.mode),
+              foreground = b[i]
+            const blended =
+              mode === 1
+                ? n * foreground
+                : mode === 2
+                  ? 1 - (1 - n) * (1 - foreground)
+                  : mode === 3
+                    ? n < 0.5
+                      ? 2 * n * foreground
+                      : 1 - 2 * (1 - n) * (1 - foreground)
+                    : mode === 4
+                      ? n + foreground
+                      : foreground
+            return mix(n, blended, clamp(mask[i] * p.opacity))
+          }) as V
+          break
+        }
         case "output":
           v = input(0, vec(0))
           break
@@ -448,6 +516,14 @@ export function resolveGenerator(
   }
   if (node.data.kind === "ifs") {
     config.iterations = scalar(node.id, 3, node.data.params.iterations)
+    const boundsKeys = ["minX", "maxX", "minY", "maxY"]
+    if (
+      source(node.id, 1) ||
+      boundsKeys.some((key) => source(node.id, parameterPorts.ifs[key]))
+    )
+      config.bounds = boundsKeys.map((key) =>
+        scalar(node.id, parameterPorts.ifs[key], node.data.params[key])
+      )
     const system = source(node.id, 1)
     const collect = (id: string): Affine[] => {
       const n = nodes.find((n) => n.id === id)!

@@ -1,7 +1,8 @@
-import { useEffect, useRef, type RefObject } from "react"
+import { useEffect, useRef, useState, useMemo, type RefObject } from "react"
 import { compile, generateTexture, type ArtNode } from "./engine"
 import { resolveGenerator, generatorIsAnimated } from "./graph"
 import type { Edge } from "@xyflow/react"
+import { loadImage, imageCanvas, releaseUnusedImages } from "./image-assets"
 const vertex =
   "attribute vec2 aPosition; varying vec2 vUv; void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}"
 export function Preview({
@@ -25,6 +26,35 @@ export function Preview({
 }) {
   const playback = useRef(playing)
   const time = useRef(0)
+  const imageSources = useMemo(
+    () =>
+      JSON.stringify([
+        ...new Set(
+          nodes.flatMap((n) => (n.data.image ? [n.data.image.src] : []))
+        ),
+      ]),
+    [nodes]
+  )
+  const [readySources, setReadySources] = useState("")
+  useEffect(() => {
+    let cancelled = false
+    const sources = JSON.parse(imageSources) as string[]
+    onStatus(sources.length ? "Loading images…" : "Compiling…")
+    releaseUnusedImages(new Set(sources))
+    void Promise.all(sources.map(loadImage))
+      .then(() => {
+        if (!cancelled) setReadySources(imageSources)
+      })
+      .catch((error) => {
+        if (!cancelled)
+          onStatus(
+            error instanceof Error ? error.message : "Unable to load images."
+          )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [imageSources, onStatus])
   useEffect(() => {
     playback.current = playing
   }, [playing])
@@ -32,6 +62,7 @@ export function Preview({
     time.current = 0
   }, [reset])
   useEffect(() => {
+    if (readySources !== imageSources) return
     const canvas = canvasRef.current!
     canvas.width = canvas.height = resolution
     const gl = canvas.getContext("webgl", {
@@ -50,6 +81,13 @@ export function Preview({
       frames: WebGLFramebuffer[] = []
     try {
       const compiled = compile(nodes, edges)
+      if (
+        compiled.textures.length + 1 >
+        gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)
+      )
+        throw new Error(
+          "This graph exceeds the GPU texture limit. Use fewer image or generator nodes."
+        )
       const program = (fragment: string) => {
         const prog = gl.createProgram()!
         programs.push(prog)
@@ -138,11 +176,18 @@ export function Preview({
       }
       const generated = compiled.textures.map((n) =>
         texture(
-          generateTexture(n, resolveGenerator(n, nodes, edges, time.current))
+          n.data.kind === "image" || n.data.kind === "alpha"
+            ? imageCanvas(n.data.image?.src)
+            : generateTexture(
+                n,
+                resolveGenerator(n, nodes, edges, time.current)
+              )
         )
       )
-      const animated = compiled.textures.map((n) =>
-        generatorIsAnimated(n, nodes, edges)
+      const animated = compiled.textures.map(
+        (n) =>
+          ["ifs", "wfc"].includes(n.data.kind) &&
+          generatorIsAnimated(n, nodes, edges)
       )
       let lastGeneration = -1
       const setup = (p: WebGLProgram) => {
@@ -243,7 +288,17 @@ export function Preview({
       buffers.forEach((b) => gl.deleteBuffer(b))
       frames.forEach((f) => gl.deleteFramebuffer(f))
     }
-  }, [nodes, edges, reset, resolution, canvasRef, onStatus, onTime])
+  }, [
+    nodes,
+    edges,
+    reset,
+    resolution,
+    canvasRef,
+    onStatus,
+    onTime,
+    imageSources,
+    readySources,
+  ])
   return (
     <canvas
       ref={canvasRef}

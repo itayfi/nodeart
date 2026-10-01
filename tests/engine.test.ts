@@ -7,6 +7,7 @@ import {
   definitions,
   presetNames,
   collapseTiles,
+  parameterPorts,
   type Kind,
 } from "../src/engine.ts"
 const wire = (source: string, target: string, input = 0) => ({
@@ -98,6 +99,47 @@ test("WFC tile edges match for varied seeds and grid sizes", () => {
   assert.deepEqual(collapseTiles(16, rng(32)), collapseTiles(16, rng(32)))
 })
 import { parseProject } from "../src/project.ts"
+
+test("every numeric parameter has a socket, preserving legacy socket indices", () => {
+  assert.equal(parameterPorts.circle.radius, 2)
+  assert.equal(parameterPorts.line.width, 3)
+  assert.equal(parameterPorts.ifs.seed, 2)
+  assert.equal(parameterPorts.noise.scale, 2)
+  assert.equal(parameterPorts.mix.amount, 2)
+  for (const kind of Object.keys(definitions) as Kind[]) {
+    for (const param of definitions[kind].params)
+      assert.ok(
+        Number.isInteger(parameterPorts[kind][param.key]),
+        `${kind}.${param.key}`
+      )
+  }
+})
+
+test("image assets and custom colors survive JSON round trips and reject invalid data", () => {
+  const image = makeNode("image", "image", 0, 0)
+  image.data.image = {
+    src: "data:image/png;base64,aGVsbG8=",
+    name: "image.png",
+    width: 4,
+    height: 8,
+  }
+  const gradient = makeNode("gradient", "gradient", 250, 0)
+  gradient.data.colors = ["#000000", "#ff0000", "#00ff00", "#ffffff"]
+  const project = {
+    nodes: [image, gradient],
+    edges: [],
+    name: "Image study",
+    presetIndex: 0,
+  }
+  const restored = parseProject(JSON.parse(JSON.stringify(project)))
+  assert.deepEqual(restored.nodes[0].data.image, image.data.image)
+  assert.deepEqual(restored.nodes[1].data.colors, gradient.data.colors)
+  image.data.image.src = "https://example.com/image.png"
+  assert.throws(() => parseProject(project), /Invalid image/)
+  image.data.image.src = "data:image/png;base64,aGVsbG8="
+  gradient.data.colors = ["red"]
+  assert.throws(() => parseProject(project), /Invalid palette/)
+})
 test("project loading rejects invalid connections and unbounded generator parameters", () => {
   const graph = { ...preset(4), name: "Tile study", presetIndex: 4 }
   assert.equal(parseProject(graph).nodes.length, graph.nodes.length)
@@ -148,6 +190,105 @@ test("uniform scope propagates through math and rejects fragment values in gener
         [wire("noise", "circle", 2), wire("circle", "out")]
       ),
     /requires a uniform/
+  )
+})
+
+test("new shader parameter sockets consume uniform drivers and reject pixel drivers", () => {
+  for (const kind of [
+    "time",
+    "constant",
+    "noise",
+    "white",
+    "warp",
+    "palette",
+    "previous",
+    "transform",
+    "sine",
+    "threshold",
+    "image",
+    "composite",
+    "gradient",
+  ] as Kind[]) {
+    for (const param of definitions[kind].params) {
+      const target = makeNode(kind, "target", 0, 0),
+        uniform = makeNode("time", "uniform", 0, 0),
+        pixel = makeNode("uv", "pixel", 0, 0),
+        out = makeNode("output", "out", 0, 0)
+      const port = parameterPorts[kind][param.key],
+        nodes = [target, uniform, pixel, out]
+      assert.equal(
+        canConnect(wire("pixel", "target", port), nodes, []),
+        false,
+        `${kind}.${param.key} must reject pixel values`
+      )
+      const compiled = compile(nodes, [
+        wire("uniform", "target", port),
+        wire("target", "out"),
+      ])
+      assert.match(compiled.source, /vec3 n0 = vec3\(uTime/)
+      assert.match(
+        compiled.source,
+        /vec3 n1 = [^;]*n0/,
+        `${kind}.${param.key} must be read by its shader`
+      )
+    }
+  }
+})
+
+test("uniform transform parameters change CPU coordinates and IFS viewport bounds", () => {
+  const transform = makeNode("transform", "transform", 0, 0),
+    value = makeNode("constant", "value", 0, 0, { value: 2 })
+  const evaluate = numericEvaluator(
+    [transform, value],
+    [wire("value", "transform", parameterPorts.transform.scale)]
+  )
+  assert.deepEqual(evaluate("transform", 0, [0.75, 0.5, 0]), [1, 0.5, 0])
+  const ifs = makeNode("ifs", "ifs", 0, 0)
+  const config = resolveGenerator(
+    ifs,
+    [ifs, value],
+    [wire("value", "ifs", parameterPorts.ifs.maxX)],
+    0,
+    false
+  )
+  assert.deepEqual(config.bounds, [0, 2, 0, 1])
+})
+
+test("custom palette color inputs and masked compositing agree with their numeric behavior", () => {
+  const gradient = makeNode("gradient", "gradient", 0, 0),
+    color = makeNode("color", "color", 0, 0, { r: 1, g: 0, b: 0 })
+  gradient.data.colors = ["#000000", "#000000", "#ffffff", "#ffffff"]
+  const evaluate = numericEvaluator(
+    [gradient, color],
+    [wire("color", "gradient", 3)]
+  )
+  assert.deepEqual(evaluate("gradient", 0), [1, 0, 0])
+  const background = makeNode("color", "background", 0, 0, {
+      r: 0.2,
+      g: 0.4,
+      b: 0.6,
+    }),
+    foreground = makeNode("color", "foreground", 0, 0, {
+      r: 0.8,
+      g: 0.5,
+      b: 0.1,
+    }),
+    mask = makeNode("constant", "mask", 0, 0, { value: 0.5 }),
+    composite = makeNode("composite", "composite", 0, 0, {
+      mode: 1,
+      opacity: 0.5,
+    })
+  const compositeEvaluator = numericEvaluator(
+    [background, foreground, mask, composite],
+    [
+      wire("background", "composite"),
+      wire("foreground", "composite", 1),
+      wire("mask", "composite", 2),
+    ]
+  )
+  const result = compositeEvaluator("composite", 0)
+  ;[0.19, 0.35, 0.465].forEach((expected, i) =>
+    assert.ok(Math.abs(result[i] - expected) < 1e-10)
   )
 })
 test("animated shape dimensions and line endpoints evaluate differently over time", () => {
@@ -232,4 +373,3 @@ test("graph identifiers work when Web Crypto is unavailable", () => {
     else Reflect.deleteProperty(globalThis, "crypto")
   }
 })
-

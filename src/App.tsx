@@ -57,7 +57,6 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import { Input } from "@/components/ui/input"
-import { Slider } from "@/components/ui/slider"
 import {
   Select,
   SelectContent,
@@ -78,7 +77,6 @@ import {
 import {
   graphTypes,
   inputSpec,
-  parameterInput,
   canConnect,
   newNodeId,
   type GraphType,
@@ -95,7 +93,18 @@ import {
   type Kind,
 } from "./engine"
 import { Preview } from "./Preview"
-import { parseProject, type Project as Saved } from "./project"
+import { parseProject } from "./project"
+import {
+  loadLibrary,
+  saveProject,
+  deleteProject,
+  newProject,
+  type Library,
+  type LibraryProject,
+} from "./project-library"
+import { ParameterEditor } from "./components/parameter-editor"
+import { ProjectBrowser } from "./components/project-browser"
+import { ImageEditor } from "./components/image-editor"
 import type { Edge } from "@xyflow/react"
 type Actions = {
   select: (id: string) => void
@@ -290,16 +299,15 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
 }
 const nodeTypes = { art: ArtCard }
 const categories = ["Inputs", "Fields", "Math", "Color", "Generators", "Output"]
-function readSaved(): Saved | null {
-  try {
-    const raw = localStorage.getItem("nodeart-project")
-    return raw ? parseProject(JSON.parse(raw)) : null
-  } catch {
-    return null
-  }
-}
-function Workspace() {
-  const [initial] = useState(() => readSaved())
+function Workspace({ library }: { library: Library }) {
+  const [initial] = useState(() =>
+    library.projects.find((p) => p.id === library.activeId)!
+  )
+  const [projects, setProjects] = useState(library.projects)
+  const [projectId, setProjectId] = useState(library.activeId)
+  const [projectsOpen, setProjectsOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [storageError, setStorageError] = useState(library.error ?? "")
   const [nodes, setNodes, onNodesChange] = useNodesState<ArtNode>(
     initial?.nodes ?? preset(0).nodes
   )
@@ -334,6 +342,33 @@ function Workspace() {
   const flow = useReactFlow<ArtNode>()
   const nodesInitialized = useNodesInitialized()
   const [pendingFit, setPendingFit] = useState(false)
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const snapshot = useMemo(
+    () =>
+      JSON.stringify({
+        nodes: nodes.map((n) => ({
+          id: n.id,
+          type: "art",
+          position: n.position,
+          data: n.data,
+        })),
+        edges: edges.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          targetHandle: e.targetHandle,
+        })),
+        name,
+        presetIndex,
+      }),
+    [nodes, edges, name, presetIndex]
+  )
+  const latestSnapshot = useRef(snapshot)
+  const savedSnapshot = useRef("")
+  useEffect(() => {
+    latestSnapshot.current = snapshot
+  }, [snapshot])
   useEffect(() => {
     if (!pendingFit || !nodesInitialized) return
     let second = 0
@@ -349,16 +384,21 @@ function Workspace() {
     }
   }, [pendingFit, nodesInitialized, flow])
   const selected = nodes.find((n) => n.id === selectedId)
-  const signature = JSON.stringify(
-    nodes.map((n) => ({ id: n.id, data: n.data }))
+  const signature = useMemo(
+    () => JSON.stringify(nodes.map((n) => ({ id: n.id, data: n.data }))),
+    [nodes]
   )
-  const edgeSignature = JSON.stringify(
-    edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      targetHandle: e.targetHandle,
-    }))
+  const edgeSignature = useMemo(
+    () =>
+      JSON.stringify(
+        edges.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          targetHandle: e.targetHandle,
+        }))
+      ),
+    [edges]
   )
   // Positions and selection do not recompile the shader or clear frame history.
   const renderNodes = useMemo(
@@ -374,6 +414,128 @@ function Workspace() {
     if (noticeTimer.current) clearTimeout(noticeTimer.current)
     noticeTimer.current = setTimeout(() => setNotice(""), 3200)
   }, [])
+  const persist = useCallback(async () => {
+    const project: LibraryProject = {
+      ...JSON.parse(snapshot),
+      id: projectId,
+      updatedAt: Date.now(),
+    }
+    if (canvas.current && status === "Compiled") {
+      const thumbnail = document.createElement("canvas")
+      thumbnail.width = thumbnail.height = 200
+      thumbnail.getContext("2d")?.drawImage(canvas.current, 0, 0, 200, 200)
+      project.thumbnail = thumbnail.toDataURL("image/jpeg", 0.7)
+    }
+    const task = queue.current.catch(() => {}).then(() => saveProject(project))
+    queue.current = task
+    try {
+      await task
+      setProjects((previous) => [
+        project,
+        ...previous.filter((p) => p.id !== project.id),
+      ])
+      savedSnapshot.current = snapshot
+      if (latestSnapshot.current === snapshot) setDirty(false)
+      setStorageError("")
+      return true
+    } catch {
+      setStorageError(
+        "Unable to save locally. Download graph JSON to keep your work."
+      )
+      return false
+    }
+  }, [snapshot, projectId, status])
+  useEffect(() => {
+    if (busy || (savedSnapshot.current === snapshot && status !== "Compiled"))
+      return
+    autosaveTimer.current = setTimeout(() => {
+      void persist()
+    }, 650)
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    }
+  }, [snapshot, persist, busy, status])
+  useEffect(() => {
+    const flush = () => {
+      if (
+        document.visibilityState === "hidden" &&
+        savedSnapshot.current !== snapshot
+      )
+        void persist()
+    }
+    const warn = (event: BeforeUnloadEvent) => {
+      if (savedSnapshot.current !== latestSnapshot.current) {
+        event.preventDefault()
+        event.returnValue = ""
+      }
+    }
+    document.addEventListener("visibilitychange", flush)
+    window.addEventListener("beforeunload", warn)
+    return () => {
+      document.removeEventListener("visibilitychange", flush)
+      window.removeEventListener("beforeunload", warn)
+    }
+  }, [snapshot, persist])
+  const activate = (project: LibraryProject) => {
+    setProjectId(project.id)
+    setNodes(project.nodes)
+    setEdges(project.edges)
+    setName(project.name)
+    setPresetIndex(project.presetIndex)
+    setSelectedId("")
+    setSelectedEdgeId("")
+    setDirty(false)
+    setReset((r) => r + 1)
+    setPendingFit(true)
+    setProjectsOpen(false)
+    savedSnapshot.current = ""
+  }
+  const chooseProject = async (project: LibraryProject) => {
+    if (project.id === projectId) {
+      setProjectsOpen(false)
+      return
+    }
+    setBusy(true)
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    try {
+      if (!(await persist())) {
+        notify("Save failed. Download a backup before switching projects.")
+        return
+      }
+      await saveProject(project)
+      activate(project)
+      play("select", { emphasis: "subtle" })
+    } catch {
+      notify("Unable to open this project.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  const createProject = async (project: LibraryProject) => {
+    setBusy(true)
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    try {
+      if (!(await persist())) {
+        notify("Save failed. Download a backup before creating a project.")
+        return
+      }
+      await saveProject(project)
+      setProjects((previous) => [project, ...previous])
+      activate(project)
+    } catch {
+      notify("Unable to create this project.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  const changeData = (data: Partial<ArtNode["data"]>) => {
+    setNodes((ns) =>
+      ns.map((n) =>
+        n.id === selectedId ? { ...n, data: { ...n.data, ...data } } : n
+      )
+    )
+    setDirty(true)
+  }
   const changeParam = (key: string, value: number) => {
     setNodes((ns) =>
       ns.map((n) =>
@@ -403,16 +565,13 @@ function Workspace() {
     [setEdges]
   )
   const loadPreset = (index: number) => {
-    const graph = preset(index)
-    setNodes(graph.nodes)
-    setEdges(graph.edges)
-    setName(presetNames[index])
-    setPresetIndex(index)
-    setSelectedId(index < 2 ? "noise" : "generator")
-    setReset((r) => r + 1)
-    setDirty(true)
-    play("select", { emphasis: "subtle" })
-    setPendingFit(true)
+    void createProject(
+      newProject(presetNames[index], {
+        ...preset(index),
+        name: presetNames[index],
+        presetIndex: index,
+      })
+    )
   }
   const addNode = (kind: Kind) => {
     if (kind === "output" && nodes.some((n) => n.data.kind === "output")) {
@@ -430,17 +589,11 @@ function Workspace() {
     setSelectedId(id)
     setDirty(true)
   }
-  const save = () => {
-    try {
-      localStorage.setItem(
-        "nodeart-project",
-        JSON.stringify({ nodes, edges, name, presetIndex })
-      )
-      setDirty(false)
+  const save = async () => {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    if (await persist()) {
       notify("Project saved on this device.")
       play("success", { emphasis: "subtle" })
-    } catch {
-      notify("Storage is unavailable. Download a graph backup instead.")
     }
   }
   const download = (blob: Blob, filename: string) => {
@@ -497,15 +650,7 @@ function Workspace() {
     try {
       const g = parseProject(JSON.parse(await f.text()))
       compile(g.nodes, g.edges)
-      setNodes(g.nodes)
-      setEdges(g.edges)
-      setName(g.name || "Untitled study")
-      setPresetIndex(g.presetIndex)
-      setSelectedId("")
-      setDirty(true)
-      setReset((r) => r + 1)
-      setPendingFit(true)
-      notify("Graph imported.")
+      await createProject(newProject(g.name || "Untitled study", g))
     } catch {
       notify("Unable to import: choose a valid Nodeart graph JSON.")
     }
@@ -557,6 +702,7 @@ function Workspace() {
             <Input
               className="project-name max-w-[180px]"
               aria-label="Project name"
+              maxLength={120}
               value={name}
               onChange={(e) => {
                 setName(e.target.value)
@@ -564,17 +710,22 @@ function Workspace() {
               }}
             />
             <span className="hidden rounded-full px-2 py-1 text-[12px] text-[#294d65] sm:block">
-              {dirty ? "Unsaved changes" : "Saved locally"}
+              {storageError
+                ? "Save unavailable"
+                : dirty
+                  ? "Saving…"
+                  : "Saved locally"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => file.current?.click()}
+              disabled={busy}
+              onClick={() => setProjectsOpen(true)}
             >
               <FolderOpen />
-              Open
+              Projects
             </Button>
             <input
               type="file"
@@ -590,6 +741,7 @@ function Workspace() {
               variant="secondary"
               size="sm"
               onClick={save}
+              disabled={busy}
               data-cuelume-tap={undefined}
             >
               <Save />
@@ -618,6 +770,25 @@ function Workspace() {
                 <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[220px]">
+                <DropdownMenuItem
+                  onClick={() =>
+                    void createProject(
+                      newProject("Untitled study", {
+                        nodes: [makeNode("output", "out", 300, 150)],
+                        edges: [],
+                        name: "Untitled study",
+                        presetIndex: 0,
+                      })
+                    )
+                  }
+                >
+                  <Plus />
+                  New project
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => file.current?.click()}>
+                  <FolderOpen />
+                  Import graph JSON
+                </DropdownMenuItem>
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
                     <Sparkles />
@@ -993,82 +1164,52 @@ function Workspace() {
                       <p className="mb-5 text-[12px] leading-relaxed text-[#294d65]">
                         {definitions[selected.data.kind].description}
                       </p>
-                      {definitions[selected.data.kind].params.map((p) => {
-                        const port = parameterInput(selected.data.kind, p.key),
-                          driver =
-                            port === undefined
-                              ? undefined
-                              : edges.find(
-                                  (e) =>
-                                    e.target === selectedId &&
-                                    e.targetHandle === String(port)
-                                )
-                        return (
-                          <div key={p.key} className="mb-4">
-                            <div className="mb-1.5 flex justify-between text-[12px]">
-                              <label
-                                id={`param-${p.key}`}
-                                className="text-[#294d65]"
-                              >
-                                {p.label}
-                              </label>
-                              <output className="numeric-badge rounded px-1.5 py-0.5 font-mono text-[12px]">
-                                {driver
-                                  ? "Connected"
-                                  : p.key === "theme"
-                                    ? ["Prism", "Sunset", "Botanical", "Ocean"][
-                                        Math.round(selected.data.params[p.key])
-                                      ]
-                                    : selected.data.params[p.key].toFixed(
-                                        p.step === 1 ? 0 : 2
-                                      )}
-                              </output>
-                            </div>
-                            <Slider
-                              disabled={Boolean(driver)}
-                              aria-labelledby={`param-${p.key}`}
-                              aria-label={p.label}
-                              min={p.min}
-                              max={p.max}
-                              step={p.step}
-                              value={selected.data.params[p.key]}
-                              onValueChange={(v) =>
-                                changeParam(
-                                  p.key,
-                                  Array.isArray(v) ? v[0] : (v as number)
-                                )
-                              }
-                            />
-                            {driver && (
-                              <div className="mt-1 flex items-center justify-between gap-1 text-[12px] text-[#294d65]">
-                                <span>
-                                  Driven by{" "}
-                                  {
-                                    definitions[
-                                      nodes.find((n) => n.id === driver.source)!
-                                        .data.kind
-                                    ].title
-                                  }
-                                </span>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  aria-label={`Disconnect ${p.label}`}
-                                  onClick={() => {
-                                    setEdges((es) =>
-                                      es.filter((e) => e.id !== driver.id)
-                                    )
-                                    setDirty(true)
-                                  }}
-                                >
-                                  <X className="size-3" />
-                                  Disconnect
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                      {["image", "alpha"].includes(selected.data.kind) && (
+                        <ImageEditor
+                          key={selected.id}
+                          node={selected}
+                          nodes={nodes}
+                          onData={changeData}
+                          onAlpha={() => {
+                            const id = newNodeId(),
+                              alpha = makeNode(
+                                "alpha",
+                                id,
+                                selected.position.x,
+                                selected.position.y + 200
+                              )
+                            alpha.data.image = selected.data.image
+                            const coordinates = edges.find(
+                              (edge) =>
+                                edge.target === selected.id &&
+                                edge.targetHandle === "0"
+                            )
+                            setNodes((previous) => [...previous, alpha])
+                            if (coordinates)
+                              setEdges((previous) => [
+                                ...previous,
+                                { ...coordinates, id: newNodeId(), target: id },
+                              ])
+                            setSelectedId(id)
+                            setDirty(true)
+                          }}
+                        />
+                      )}
+                      <ParameterEditor
+                        key={selected.id}
+                        node={selected}
+                        nodes={nodes}
+                        edges={edges}
+                        onParam={changeParam}
+                        onData={changeData}
+                        onSelect={setSelectedId}
+                        onDisconnect={(id) => {
+                          setEdges((previous) =>
+                            previous.filter((edge) => edge.id !== id)
+                          )
+                          setDirty(true)
+                        }}
+                      />
                       <div className="mt-5 flex gap-2">
                         <Button
                           disabled={selected.data.kind === "output"}
@@ -1119,6 +1260,58 @@ function Workspace() {
           </aside>
         </div>
 
+        {storageError && (
+          <div
+            role="alert"
+            className="fixed bottom-3 left-4 z-40 max-w-[80vw] rounded-lg bg-[#edf1f4] px-4 py-2 text-[12px] text-red-800"
+          >
+            {storageError}
+          </div>
+        )}
+        <ProjectBrowser
+          open={projectsOpen}
+          onOpenChange={setProjectsOpen}
+          projects={projects}
+          activeId={projectId}
+          busy={busy}
+          onChoose={(project) => void chooseProject(project)}
+          onNew={() =>
+            void createProject(
+              newProject("Untitled study", {
+                nodes: [makeNode("output", "out", 300, 150)],
+                edges: [],
+                name: "Untitled study",
+                presetIndex: 0,
+              })
+            )
+          }
+          onDuplicate={(project) =>
+            void createProject(
+              newProject(
+                `${project.name} copy`,
+                project.id === projectId ? JSON.parse(snapshot) : project
+              )
+            )
+          }
+          onImport={() => file.current?.click()}
+          onDelete={async (project) => {
+            if (project.id === projectId) return false
+            setBusy(true)
+            try {
+              await deleteProject(project.id)
+              setProjects((previous) =>
+                previous.filter((p) => p.id !== project.id)
+              )
+              play("success", { emphasis: "subtle" })
+              return true
+            } catch {
+              notify("Unable to delete this project.")
+              return false
+            } finally {
+              setBusy(false)
+            }
+          }}
+        />
         {notice && (
           <div
             role="status"
@@ -1216,9 +1409,17 @@ function Workspace() {
                   for feedback without a graph cycle.
                 </p>
                 <p>
-                  Find example graphs in Project options. Save stores your
-                  workspace on this device; Download graph JSON creates a
-                  portable JSON backup.
+                  Projects opens your local project library. Changes save
+                  automatically on this device. Example graphs create separate
+                  projects; Download graph JSON includes imported images in a
+                  portable backup.
+                </p>
+                <p>
+                  Enter exact parameter values and press Enter, or use Shift +
+                  arrow keys for fine adjustments. Parameter sockets accept
+                  uniforms from Time, Value, and math nodes. Image texture and
+                  Image alpha use imported project images; Composite blends them
+                  with masks and procedural artwork.
                 </p>
                 <Button
                   onClick={() => {
@@ -1256,9 +1457,28 @@ function Workspace() {
   )
 }
 export default function App() {
+  const [library, setLibrary] = useState<Library | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void loadLibrary().then((value) => {
+      if (!cancelled) setLibrary(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  if (!library)
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center text-sm"
+        role="status"
+      >
+        Opening your projects…
+      </div>
+    )
   return (
     <ReactFlowProvider>
-      <Workspace />
+      <Workspace library={library} />
     </ReactFlowProvider>
   )
 }

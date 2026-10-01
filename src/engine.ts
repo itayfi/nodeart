@@ -1,6 +1,10 @@
 import { validateGraph, type GeneratorConfig } from "./graph.ts"
 import type { Edge, Node } from "@xyflow/react"
 export type Kind =
+  | "image"
+  | "alpha"
+  | "composite"
+  | "gradient"
   | "line"
   | "affine"
   | "ifsset"
@@ -35,7 +39,12 @@ export type Kind =
   | "x"
   | "y"
 export type ArtNode = Node<
-  { kind: Kind; params: Record<string, number> },
+  {
+    kind: Kind
+    params: Record<string, number>
+    image?: { src: string; name: string; width: number; height: number }
+    colors?: string[]
+  },
   "art"
 >
 type Param = {
@@ -89,6 +98,38 @@ const d = (
   )[category],
 })
 export const definitions: Record<Kind, Def> = {
+  image: d(
+    "Image texture",
+    "Inputs",
+    "Import an image and sample it with transformed or warped coordinates. Transparent pixels retain their color; use Image alpha as a mask.",
+    ["Coordinates"],
+    "color",
+    [p("opacity", "Opacity", 0, 1, 1)]
+  ),
+  alpha: d(
+    "Image alpha",
+    "Inputs",
+    "Sample the transparency of an imported image. Choose the same image as your Image texture node.",
+    ["Coordinates"],
+    "scalar",
+    []
+  ),
+  composite: d(
+    "Composite",
+    "Color",
+    "Blend a foreground over a background using a mask and opacity. Modes: normal, multiply, screen, overlay, and add.",
+    ["Background", "Foreground", "Mask"],
+    "color",
+    [p("opacity", "Opacity", 0, 1, 1), p("mode", "Mode", 0, 4, 0, 1)]
+  ),
+  gradient: d(
+    "Custom palette",
+    "Color",
+    "Map a field through four editable color stops. Cycles, phase, and each color can be driven by uniforms.",
+    ["Field", "Cycles", "Phase", "Color 1", "Color 2", "Color 3", "Color 4"],
+    "color",
+    [p("frequency", "Cycles", 0.2, 8, 1), p("offset", "Phase", 0, 1, 0)]
+  ),
   line: d(
     "Line",
     "Generators",
@@ -399,6 +440,44 @@ export const definitions: Record<Kind, Def> = {
     ""
   ),
 }
+// Append new parameter sockets so saved graphs retain their original handle indices.
+export const parameterPorts = {} as Record<Kind, Record<string, number>>
+for (const kind of Object.keys(definitions) as Kind[]) {
+  const def = definitions[kind]
+  const ports: Record<string, number> = {}
+  for (const param of def.params) {
+    const aliases: Record<string, string> = {
+      cx: "Center",
+      cy: "Center",
+      ax: "Start",
+      ay: "Start",
+      bx: "End",
+      by: "End",
+    }
+    const label =
+      kind === "box" && ["width", "height"].includes(param.key)
+        ? "Size"
+        : kind === "mix" && param.key === "amount"
+          ? "Mask"
+          : (aliases[param.key] ??
+            param.label.replace(/ fallback$| label$/, ""))
+    let index = def.inputs.indexOf(label)
+    if (index < 0) {
+      index = def.inputs.length
+      def.inputs.push(label)
+    }
+    ports[param.key] = index
+  }
+  parameterPorts[kind] = ports
+}
+export const defaultColors = ["#16364a", "#339ee0", "#f4ab76", "#fff1c6"]
+export function colorVector(color: string): [number, number, number] {
+  return [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16) / 255) as [
+    number,
+    number,
+    number,
+  ]
+}
 export function makeNode(
   kind: Kind,
   id: string,
@@ -436,6 +515,16 @@ export const presetNames = [
   "Animated line",
 ]
 export function preset(index: number): { nodes: ArtNode[]; edges: Edge[] } {
+  const graph = presetGraph(index)
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      position: { ...node.position, y: node.position.y * 1.8 },
+    })),
+  }
+}
+function presetGraph(index: number): { nodes: ArtNode[]; edges: Edge[] } {
   if (index === 0)
     return {
       nodes: [
@@ -602,48 +691,52 @@ export function compile(nodes: ArtNode[], edges: Edge[]) {
       )
       return e ? visit(e.source) : fallback
     }
+    const param = (key: string) => {
+      const port = parameterPorts[kind][key]
+      return port === undefined
+        ? f(p[key])
+        : `(${input(port, `vec3(${f(p[key])})`)}.x)`
+    }
     let expr = ""
     switch (kind) {
       case "uv":
         expr = "vec3(vUv,0.)"
         break
       case "time":
-        expr = `vec3(uTime*${f(p.speed)})`
+        expr = `vec3(uTime*${param("speed")})`
         break
       case "constant":
-        expr = `vec3(${f(p.value)})`
+        expr = `vec3(${param("value")})`
         break
       case "warp": {
         const uv = input(0, "vec3(vUv,0.)"),
           t = input(1, "vec3(0.)")
-        expr = `vec3(${uv}.xy+${f(p.amount)}*vec2(fbm(${uv}.xy*${f(p.scale)}+${t}.x)-.5,fbm(${uv}.yx*${f(p.scale)}-${t}.x+12.)-.5),0.)`
+        expr = `vec3(${uv}.xy+${param("amount")}*vec2(fbm(${uv}.xy*${param("scale")}+${t}.x)-.5,fbm(${uv}.yx*${param("scale")}-${t}.x+12.)-.5),0.)`
         break
       }
       case "noise": {
         const uv = input(0, "vec3(vUv,0.)"),
           t = input(1, "vec3(0.)")
-        expr = `vec3(mix(perlin(${uv}.xy*${f(p.scale)}+${t}.x+${f(p.seed)}),fbm(${uv}.xy*${f(p.scale)}+${t}.x+${f(p.seed)}),${f(p.detail)}))`
+        expr = `vec3(mix(perlin(${uv}.xy*${param("scale")}+${t}.x+${param("seed")}),fbm(${uv}.xy*${param("scale")}+${t}.x+${param("seed")}),${param("detail")}))`
         break
       }
       case "white":
-        expr = `vec3(hash(${input(0, "vec3(vUv,0.)")}.xy*uResolution+${input(1, "vec3(0.)")}.x+${f(p.seed)}))`
+        expr = `vec3(hash(${input(0, "vec3(vUv,0.)")}.xy*uResolution+${input(1, "vec3(0.)")}.x+${param("seed")}))`
         break
       case "palette": {
-        const themes = [
-          "vec3(.05,.23,.43)",
-          "vec3(.0,.12,.25)",
-          "vec3(.22,.12,.02)",
-          "vec3(.3,.5,.7)",
-        ]
-        expr = `(.62+.34*cos(6.2831853*(${input(0, "vec3(0.)")}.x*${f(p.frequency)}+${f(p.offset)}+${themes[Math.round(p.theme)] ?? themes[0]})))`
-        if (Math.round(p.theme) === 1)
-          expr = `mix(vec3(.22,.19,.35),vec3(.96,.68,.44),.5-.5*cos(${input(0, "vec3(0.)")}.x*${f(p.frequency)}*3.14159265+${f(p.offset)}))`
-        if (Math.round(p.theme) === 2)
-          expr = `mix(vec3(.08,.23,.17),vec3(.83,.88,.57),clamp(${input(0, "vec3(0.)")}.x*${f(p.frequency)}+${f(p.offset)},0.,1.))`
-        if (Math.round(p.theme) === 3)
-          expr = `mix(vec3(.06,.24,.32),vec3(.57,.89,.82),.5+.5*sin(${input(0, "vec3(0.)")}.x*${f(p.frequency)}*6.2831853+${f(p.offset)}))`
+        expr = `paletteColor(${input(0, "vec3(0.)")}.x,${param("frequency")},${param("offset")},${param("theme")})`
         break
       }
+      case "gradient": {
+        const colors = (n.data.colors ?? defaultColors).map((color, i) =>
+          input(i + 3, `vec3(${colorVector(color).map(f).join(",")})`)
+        )
+        expr = `colorRamp(clamp(${input(0, "vec3(0.)")}.x*${param("frequency")}+${param("offset")},0.,1.),${colors.join(",")})`
+        break
+      }
+      case "composite":
+        expr = `mix(${input(0, "vec3(0.)")},blendColor(${input(0, "vec3(0.)")},${input(1, "vec3(1.)")},${param("mode")}),clamp(${input(2, "vec3(1.)")}*${param("opacity")},0.,1.))`
+        break
       case "subtract":
         expr = `(${input(0, "vec3(0.)")}-${input(1, `vec3(${f(p.value)})`)})`
         break
@@ -662,7 +755,7 @@ export function compile(nodes: ArtNode[], edges: Edge[]) {
         expr = `clamp(${input(0, "vec3(0.)")},0.,1.)`
         break
       case "threshold":
-        expr = `smoothstep(vec3(${f(p.level - p.softness)}),vec3(${f(p.level + p.softness)}),${input(0, "vec3(0.)")})`
+        expr = `smoothstep(vec3(${param("level")}-${param("softness")}),vec3(${param("level")}+max(.0001,${param("softness")})),${input(0, "vec3(0.)")})`
         break
       case "vector":
         expr = `vec3(${input(0, `vec3(${f(p.x)})`)}.x,${input(1, `vec3(${f(p.y)})`)}.x,0.)`
@@ -675,8 +768,8 @@ export function compile(nodes: ArtNode[], edges: Edge[]) {
         expr = `vec3(${input(0, `vec3(${f(p.r)})`)}.x,${input(1, `vec3(${f(p.g)})`)}.x,${input(2, `vec3(${f(p.b)})`)}.x)`
         break
       case "transform": {
-        const a = (p.angle * Math.PI) / 180
-        expr = `vec3(mat2(${f(Math.cos(a))},${f(Math.sin(a))},${f(-Math.sin(a))},${f(Math.cos(a))})*(${input(0, "vec3(vUv,0.)")}.xy-.5)*${f(p.scale)}+.5+vec2(${f(p.x)},${f(p.y)}),0.)`
+        const a = `(${param("angle")}*0.01745329252)`
+        expr = `vec3(mat2(cos(${a}),sin(${a}),-sin(${a}),cos(${a}))*(${input(0, "vec3(vUv,0.)")}.xy-.5)*${param("scale")}+.5+vec2(${param("x")},${param("y")}),0.)`
         break
       }
       case "circle": {
@@ -711,15 +804,20 @@ export function compile(nodes: ArtNode[], edges: Edge[]) {
         throw new Error(
           "Connect definition nodes to an IFS or WFC generator, not directly to pixel inputs."
         )
+      case "image":
+      case "alpha":
       case "ifs":
       case "wfc": {
         const i = textures.length
         textures.push(n)
-        expr = `texture2D(uTex${i},${input(0, "vec3(vUv,0.)")}.xy).rgb`
+        expr =
+          kind === "alpha"
+            ? `vec3(texture2D(uTex${i},${input(0, "vec3(vUv,0.)")}.xy).a)`
+            : `texture2D(uTex${i},${input(0, "vec3(vUv,0.)")}.xy).rgb${kind === "image" ? `*${param("opacity")}` : ""}`
         break
       }
       case "previous":
-        expr = `(texture2D(uPrevious,${input(0, "vec3(vUv,0.)")}.xy).rgb*${f(p.decay)})`
+        expr = `(texture2D(uPrevious,${input(0, "vec3(vUv,0.)")}.xy).rgb*${param("decay")})`
         break
       case "add":
         expr = `(${input(0, "vec3(0.)")}+${input(1, `vec3(${f(p.value)})`)})`
@@ -728,7 +826,7 @@ export function compile(nodes: ArtNode[], edges: Edge[]) {
         expr = `(${input(0, "vec3(1.)")}*${input(1, `vec3(${f(p.value)})`)})`
         break
       case "sine":
-        expr = `(.5+.5*sin(${input(0, "vec3(vUv,0.)")}*${f(p.frequency)}))`
+        expr = `(.5+.5*sin(${input(0, "vec3(vUv,0.)")}*${param("frequency")}))`
         break
       case "mix":
         expr = `mix(${input(0, "vec3(0.)")},${input(1, "vec3(1.)")},clamp(${input(2, `vec3(${f(p.amount)})`)},0.,1.))`
@@ -752,6 +850,9 @@ uniform float uTime;
 uniform vec2 uResolution;
 uniform sampler2D uPrevious;
 ${textures.map((_, i) => `uniform sampler2D uTex${i};`).join("\n")}
+vec3 colorRamp(float t,vec3 a,vec3 b,vec3 c,vec3 d){return t<.333333?mix(a,b,t*3.):t<.666667?mix(b,c,t*3.-1.):mix(c,d,t*3.-2.);}
+vec3 blendColor(vec3 a,vec3 b,float mode){if(mode<.5)return b;if(mode<1.5)return a*b;if(mode<2.5)return 1.-(1.-a)*(1.-b);if(mode<3.5)return mix(2.*a*b,1.-2.*(1.-a)*(1.-b),step(vec3(.5),a));return a+b;}
+vec3 paletteColor(float t,float cycles,float phase,float theme){if(theme<.5)return .62+.34*cos(6.2831853*(t*cycles+phase+vec3(.05,.23,.43)));if(theme<1.5)return mix(vec3(.22,.19,.35),vec3(.96,.68,.44),.5-.5*cos(t*cycles*3.14159265+phase));if(theme<2.5)return mix(vec3(.08,.23,.17),vec3(.83,.88,.57),clamp(t*cycles+phase,0.,1.));return mix(vec3(.06,.24,.32),vec3(.57,.89,.82),.5+.5*sin(t*cycles*6.2831853+phase));}
 float segmentDistance(vec2 p,vec2 a,vec2 b){vec2 ab=b-a;float t=clamp(dot(p-a,ab)/max(dot(ab,ab),.000001),0.,1.);return length(p-a-t*ab);}
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 vec2 gradient(vec2 p){float a=hash(p)*6.2831853;return vec2(cos(a),sin(a));}
@@ -792,10 +893,10 @@ export function generateTexture(node: ArtNode, config?: GeneratorConfig) {
       )
     )
     const custom = Boolean(config?.transforms)
-    const minX = custom ? node.data.params.minX : -2.7,
-      maxX = custom ? node.data.params.maxX : 2.7,
-      minY = custom ? node.data.params.minY : 0,
-      maxY = custom ? node.data.params.maxY : 10.5
+    const minX = config?.bounds?.[0] ?? (custom ? node.data.params.minX : -2.7),
+      maxX = config?.bounds?.[1] ?? (custom ? node.data.params.maxX : 2.7),
+      minY = config?.bounds?.[2] ?? (custom ? node.data.params.minY : 0),
+      maxY = config?.bounds?.[3] ?? (custom ? node.data.params.maxY : 10.5)
     if (maxX <= minX || maxY <= minY)
       throw new Error("IFS view maximum must exceed minimum.")
     for (let i = 0; i < iterations; i++) {

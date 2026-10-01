@@ -811,6 +811,30 @@ code {
 .status-bar {
   min-height: 36px;
 }
+.image-asset-preview,
+.palette-preview,
+.project-placeholder {
+  box-shadow: inset 0 1px 3px #16364a33, 0 1px #ffffff80;
+}
+.image-asset-preview {
+  background: repeating-conic-gradient(#edf1f4 0% 25%, #fff 0% 50%) 0 / 16px 16px;
+}
+[data-slot="input"].color-picker {
+  padding: 3px;
+  cursor: pointer;
+}
+[data-slot="input"].color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+[data-slot="input"].color-picker::-webkit-color-swatch {
+  border-radius: 4px;
+  border: 0;
+  box-shadow: inset 0 1px 2px #16364a40;
+}
+[data-slot="button"].project-tile {
+  white-space: normal;
+  align-items: start;
+  border-radius: 12px;
+  background: linear-gradient(var(--panel-top), var(--panel-bottom));
+}
 @media (max-width: 600px) {
   .project-bar {
     height: auto;

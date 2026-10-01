@@ -4,6 +4,7 @@ Nodeart is a node-based generative art tool.
 
 # Rules
 
+- Commit substantial completed changes as part of the implementation turn after the required verification passes. Include only changes belonging to the task, and honor any user instruction to leave changes uncommitted.
 - Use pnpm exclusively for dependency installation, scripts, and CLI commands. Do not use npm, npx, or yarn.
 - Use shadcn/ui with Base UI for UI components. Add components through the official CLI (`pnpm dlx shadcn@latest add <component>`), then customize the generated source instead of recreating the primitives manually.
 - Use Tailwind CSS v4 utilities for structure: layout, spacing, sizing, and responsive behavior.

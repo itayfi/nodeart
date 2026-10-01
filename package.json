@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/engine.test.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
@@ -38,6 +38,7 @@
     "eslint": "^10",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^17",
     "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
