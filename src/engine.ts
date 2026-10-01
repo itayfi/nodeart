@@ -510,7 +510,7 @@ const edge = (source: string, target: string, input = 0): Edge => ({
 })
 export const presetNames = [
   "Chromatic flow",
-  "Afterimage",
+  "Iridescent flow",
   "Soft geometry",
   "Custom IFS",
   "Custom tile garden",
@@ -552,10 +552,10 @@ function presetGraph(index: number): { nodes: ArtNode[]; edges: Edge[] } {
         makeNode("uv", "uv", 0, 0),
         makeNode("time", "time", 0, 190),
         makeNode("warp", "warp", 270, 0, { amount: 0.04 }),
-        makeNode("previous", "prev", 540, 0),
+        makeNode("previous", "prev", 540, 0, { decay: 1 }),
         makeNode("noise", "noise", 270, 250),
         makeNode("palette", "palette", 540, 250),
-        makeNode("mix", "mix", 810, 100, { amount: 0.12 }),
+        makeNode("mix", "mix", 810, 100, { amount: 0.04 }),
         makeNode("output", "out", 1080, 100),
       ],
       edges: [
