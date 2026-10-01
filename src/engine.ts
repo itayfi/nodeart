@@ -310,7 +310,7 @@ export const definitions: Record<Kind, Def> = {
     "Sample the last rendered frame at connected coordinates. Reset clears history.",
     ["Coordinates"],
     "color",
-    [p("decay", "Persistence", 0, 0.99, 0.92)]
+    [p("decay", "Persistence", 0, 1, 0.92)]
   ),
   noise: d(
     "Perlin noise",
