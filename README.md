@@ -47,3 +47,5 @@ For custom WFC, connect **pixel artwork → Tile rule → Tile set → Wave coll
 Tile artwork is rasterized at 32 × 32 pixels from numeric pixel nodes; nested IFS/WFC/previous-frame textures inside a tile are currently unsupported. Time can animate artwork and rule uniforms. CPU generators update at most ten times per second while the GPU preview remains animated.
 
 The node **… menu** supports Edit properties, Duplicate, Disconnect wires, and Delete node. Selecting a wire exposes **Delete wire** in the graph footer. On touch screens, tap an output socket and then an input socket to connect; pinch to zoom. Node IDs no longer depend on Web Crypto and work over local-network HTTP. Run `pnpm dev --host 0.0.0.0` for LAN access.
+
+UI changes must follow [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md): blue gel controls, white graph, card-gradient panels, and hierarchy through spacing and typography.

@@ -51,6 +51,11 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import {
@@ -66,6 +71,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import {
   graphTypes,
@@ -103,7 +111,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
   const def = definitions[data.kind]
   return (
     <div
-      className={`art-node w-[220px] rounded-xl ${selected ? "is-selected" : ""}`}
+      className={`art-node w-[240px] rounded-xl ${selected ? "is-selected" : ""}`}
       style={{ "--node-color": def.color } as CSSProperties}
     >
       <div className="node-heading flex items-center gap-2 rounded-t-xl px-3 py-3">
@@ -129,7 +137,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
             render={
               <Button
                 className="nodrag nopan node-menu"
-                variant="ghost"
+                variant="secondary"
                 size="icon-sm"
                 aria-label={`Actions for ${def.title}`}
                 data-cuelume-tap="open"
@@ -179,7 +187,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
         {def.inputs.map((label, i) => (
           <div
             key={label}
-            className="relative flex items-center gap-2 text-[10px] text-[#78858d]"
+            className="relative flex items-center gap-2 text-[12px] text-[#294d65]"
           >
             <Handle
               type="target"
@@ -189,7 +197,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
             />
             <span className="port-dot" />
             {label}
-            <span className="ml-auto font-mono text-[9px] opacity-70">
+            <span className="ml-auto font-mono text-[12px] opacity-70">
               {inputSpec(data.kind, i).types[0] === "numeric"
                 ? inputSpec(data.kind, i).uniform
                   ? "uniform"
@@ -199,7 +207,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
           </div>
         ))}
         {data.kind === "uv" && (
-          <div className="coordinate-chip grid grid-cols-2 gap-1 rounded-md p-2 text-[10px]">
+          <div className="coordinate-chip grid grid-cols-2 gap-1 rounded-md p-2 text-[12px]">
             <span>
               X <b className="float-right font-mono">0 → 1</b>
             </span>
@@ -209,7 +217,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
           </div>
         )}
         {data.kind === "time" && (
-          <div className="text-[10px] text-[#6a7b83]">
+          <div className="text-[12px] text-[#294d65]">
             seconds ×{" "}
             <span className="font-mono">{data.params.speed.toFixed(2)}</span>
             <span className="live-dot ml-2 inline-block" />
@@ -223,7 +231,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
           .map((p) => (
             <div
               key={p.key}
-              className="node-value flex justify-between rounded-md px-2 py-1.5 text-[10px]"
+              className="node-value flex justify-between rounded-md px-2 py-1.5 text-[12px]"
             >
               <span>{p.label}</span>
               <span className="font-mono">{data.params[p.key].toFixed(2)}</span>
@@ -235,24 +243,24 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
           />
         )}
         {data.kind === "ifs" && (
-          <div className="text-[10px] text-[#738579]">
+          <div className="text-[12px] text-[#294d65]">
             Custom transforms · texture
           </div>
         )}
         {data.kind === "wfc" && (
-          <div className="text-[10px] text-[#738579]">
+          <div className="text-[12px] text-[#294d65]">
             Custom tiles · texture
           </div>
         )}
         {data.kind === "output" && (
-          <div className="output-chip flex items-center gap-2 rounded-md px-2 py-2 text-[10px]">
+          <div className="output-chip flex items-center gap-2 rounded-md px-2 py-2 text-[12px]">
             <span className="live-dot" />
             Final render
             <ArrowUpRight className="ml-auto size-3" />
           </div>
         )}
         {def.output && (
-          <div className="relative mt-2 flex justify-end gap-2 text-[10px] text-[#78858d]">
+          <div className="relative mt-2 flex justify-end gap-2 text-[12px] text-[#294d65]">
             <span>
               {def.output === "vector"
                 ? "Coordinates"
@@ -263,7 +271,7 @@ function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
                     : "Result"}
             </span>
             <span
-              className="font-mono text-[8px]"
+              className="font-mono text-[12px]"
               title="Uniform values are shared by every pixel; fragment values vary per pixel."
             >
               {outputType?.scope === "uniform" ? "UNIFORM" : "PIXEL"}
@@ -525,30 +533,27 @@ function Workspace() {
               <Workflow className="size-5" />
             </span>
             <span className="text-[20px] font-semibold tracking-[-.8px]">
-              nodeart<span className="text-[#60a79a]">.</span>
+              nodeart<span className="text-[#294d65]">.</span>
             </span>
-            <span className="ml-3 hidden border-l border-[#cad3d1] pl-5 text-[11px] tracking-wider text-[#85938d] md:block">
+            <span className="ml-3 hidden pl-5 text-[12px] tracking-wider text-[#294d65] md:block">
               A SPACE FOR HAPPY ACCIDENTS
             </span>
           </div>
           <div className="flex items-center gap-2">
             <SoundToggle />
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon"
               aria-label="Editor help"
               onClick={() => setHelp(true)}
             >
               <CircleHelp className="size-4" />
             </Button>
-            <span className="avatar ml-2 grid size-8 place-items-center rounded-full text-[11px] font-semibold">
-              YOU
-            </span>
           </div>
         </header>
-        <div className="project-bar flex h-[59px] shrink-0 items-center justify-between gap-3 px-5">
+        <div className="project-bar mx-4 flex h-[59px] shrink-0 items-center justify-between gap-3 rounded-xl px-5">
           <div className="flex min-w-0 items-center gap-3">
-            <FolderOpen className="size-4 text-[#789087]" />
+            <FolderOpen className="size-4 text-[#294d65]" />
             <Input
               className="project-name max-w-[180px]"
               aria-label="Project name"
@@ -558,13 +563,13 @@ function Workspace() {
                 setDirty(true)
               }}
             />
-            <span className="hidden rounded-full border border-[#cfd8d4] px-2 py-1 text-[9px] text-[#77857d] sm:block">
+            <span className="hidden rounded-full px-2 py-1 text-[12px] text-[#294d65] sm:block">
               {dirty ? "Unsaved changes" : "Saved locally"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => file.current?.click()}
             >
@@ -599,22 +604,107 @@ function Workspace() {
               <ArrowDownToLine />
               Export PNG
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-label="Project options"
+                    data-cuelume-tap="open"
+                  />
+                }
+              >
+                <MoreHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[220px]">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Sparkles />
+                    Example graphs
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-[220px]">
+                    {presetNames.map((presetName, i) => (
+                      <DropdownMenuItem
+                        key={presetName}
+                        data-cuelume-tap={undefined}
+                        onClick={() => loadPreset(i)}
+                      >
+                        {presetName}
+                        {presetIndex === i && <Check className="ml-auto" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem
+                  data-cuelume-tap="tap"
+                  onClick={() =>
+                    download(
+                      new Blob(
+                        [
+                          JSON.stringify(
+                            { nodes, edges, name, presetIndex },
+                            null,
+                            2
+                          ),
+                        ],
+                        { type: "application/json" }
+                      ),
+                      "nodeart-graph.json"
+                    )
+                  }
+                >
+                  <ArrowDownToLine />
+                  Download graph JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-cuelume-tap="open"
+                  onClick={() => setShowCode(true)}
+                >
+                  <Code2 />
+                  View GLSL
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="hidden! max-[850px]:flex!"
+                  data-cuelume-tap="open"
+                  onClick={() => setLibraryOpen(true)}
+                >
+                  <Plus />
+                  Add a node
+                </DropdownMenuItem>
+                {edges.some((edge) => edge.id === selectedEdgeId) && (
+                  <DropdownMenuItem
+                    data-cuelume-tap="close"
+                    onClick={() => {
+                      setEdges((es) =>
+                        es.filter((edge) => edge.id !== selectedEdgeId)
+                      )
+                      setSelectedEdgeId("")
+                      setDirty(true)
+                    }}
+                  >
+                    <Trash2 />
+                    Delete selected wire
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-        <div className="workspace-grid grid min-h-0 flex-1 grid-cols-[205px_minmax(0,1fr)_370px] max-[1100px]:grid-cols-[170px_minmax(0,1fr)_310px] max-[850px]:grid-cols-[minmax(0,1fr)_300px] max-[600px]:grid-cols-1 max-[600px]:grid-rows-[minmax(320px,1fr)_minmax(280px,1fr)] max-[600px]:overflow-y-auto min-[1500px]:grid-cols-[220px_minmax(0,1fr)_420px]">
-          <aside className="library-panel flex min-h-0 flex-col border-r border-[#ced7d1] max-[850px]:hidden">
+        <div className="workspace-grid grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_370px] gap-4 px-4 pb-4 max-[1100px]:grid-cols-[210px_minmax(0,1fr)_310px] max-[850px]:grid-cols-[minmax(0,1fr)_300px] max-[600px]:grid-cols-1 max-[600px]:grid-rows-[minmax(320px,1fr)_minmax(280px,1fr)] max-[600px]:overflow-y-auto min-[1500px]:grid-cols-[260px_minmax(0,1fr)_420px]">
+          <aside className="library-panel flex min-h-0 flex-col rounded-xl max-[850px]:hidden">
             <div className="px-4 pt-5">
               <div className="mb-1 flex items-center justify-between">
                 <h2 className="text-[13px] font-semibold">Node library</h2>
-                <span className="rounded border border-[#d8dfd9] px-1.5 text-[9px] text-[#89948d]">
+                <span className="rounded px-1.5 text-[12px] text-[#294d65]">
                   {Object.keys(definitions).length}
                 </span>
               </div>
-              <p className="mb-4 text-[10px] text-[#859087]">
+              <p className="mb-4 text-[12px] text-[#294d65]">
                 Little pieces. Endless possibilities.
               </p>
               <div className="relative">
-                <Search className="absolute top-2.5 left-2.5 z-10 size-3.5 text-[#81938a]" />
+                <Search className="absolute top-2.5 left-2.5 z-10 size-3.5 text-[#294d65]" />
                 <Input
                   className="library-search pl-8!"
                   placeholder="Find a node…"
@@ -624,7 +714,7 @@ function Workspace() {
                 />
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-4">
+            <div className="library-scroll mx-3 mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg px-3 pt-4 pb-4">
               {categories.map((category) => {
                 const items = (
                   Object.entries(definitions) as [
@@ -640,8 +730,8 @@ function Workspace() {
                 )
                 return (
                   items.length > 0 && (
-                    <section className="mb-5" key={category}>
-                      <h3 className="mb-2 flex items-center gap-2 px-2 text-[9px] font-semibold tracking-[.13em] text-[#8a958c] uppercase">
+                    <section className="mb-7" key={category}>
+                      <h3 className="mb-2 flex items-center gap-2 px-2 text-[12px] font-semibold tracking-[.13em] text-[#294d65] uppercase">
                         <CategoryIcon
                           name={
                             category === "Generators"
@@ -659,8 +749,8 @@ function Workspace() {
                       {items.map(([kind, d]) => (
                         <Button
                           key={kind}
-                          variant="ghost"
-                          className="library-item mb-0.5 flex w-full justify-start gap-2.5 px-2 text-[11px]"
+                          variant="secondary"
+                          className="library-item mb-2 flex w-full justify-start gap-2.5 px-2 text-[12px]"
                           title={d.description}
                           onClick={() => addNode(kind)}
                           data-cuelume-tap=""
@@ -682,58 +772,11 @@ function Workspace() {
                   .toLowerCase()
                   .includes(search.toLowerCase())
               ) && (
-                <p className="p-2 text-xs text-[#7d8c83]">No matching nodes.</p>
+                <p className="p-2 text-xs text-[#294d65]">No matching nodes.</p>
               )}
-            </div>
-            <div className="library-note mx-3 mb-3 rounded-lg p-3">
-              <Sparkles className="mb-2 size-4 text-[#6e9b87]" />
-              <p className="text-[10px] leading-relaxed text-[#7a897e]">
-                Start with a field.
-                <br />
-                See where it takes you.
-              </p>
             </div>
           </aside>
           <section className="flex min-h-0 min-w-0 flex-col">
-            <div className="graph-toolbar flex h-[54px] shrink-0 items-center justify-between gap-2 border-b border-[#cbd5d0] px-4">
-              <div className="flex items-center gap-2">
-                <Workflow className="size-3.5 text-[#83948a]" />
-                <span className="text-[11px] font-semibold">Graph</span>
-                <Button
-                  className="hidden! max-[850px]:inline-flex!"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setLibraryOpen(true)}
-                >
-                  <Plus />
-                  Nodes
-                </Button>
-                <span className="ml-1 text-[10px] text-[#93a197]">
-                  {nodes.length} nodes
-                </span>
-              </div>
-              <Select
-                value={presetIndex}
-                onValueChange={(v) => {
-                  if (v !== null) loadPreset(Number(v))
-                }}
-              >
-                <SelectTrigger
-                  className="preset-select max-w-[180px]"
-                  aria-label="Load example graph"
-                >
-                  <Sparkles className="size-3 text-[#759b89]" />
-                  <SelectValue>{presetNames[presetIndex]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {presetNames.map((n, i) => (
-                    <SelectItem key={n} value={i}>
-                      {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="graph-workspace relative min-h-0 flex-1">
               <ReactFlow
                 nodes={nodes.map((n) => ({
@@ -784,372 +827,298 @@ function Workspace() {
                 deleteKeyCode={["Backspace", "Delete"]}
                 defaultEdgeOptions={{
                   type: "default",
-                  style: { stroke: "#7ba69a", strokeWidth: 1.7 },
+                  style: { stroke: "#346988", strokeWidth: 2 },
                 }}
-                proOptions={{ hideAttribution: true }}
               >
-                <Background gap={18} size={1} color="#bfcfc5" />
+                <Background gap={18} size={1} color="#ccdce7" />
                 <Controls showInteractive={false} />
                 <MiniMap
                   nodeColor={(n) => definitions[(n as ArtNode).data.kind].color}
-                  maskColor="#e5ece5bb"
+                  maskColor="#ffffffcc"
                   pannable
                   zoomable
                   className="!h-[75px] !w-[115px]"
                 />
               </ReactFlow>
-              <div className="canvas-label pointer-events-none absolute top-5 left-5">
-                <span className="text-[9px] tracking-[.18em] text-[#95a498] uppercase">
-                  THE PLAYGROUND
-                </span>
-              </div>
-              <div className="graph-hint pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full px-3 py-1.5 text-[9px] whitespace-nowrap text-[#7e8f83] max-[1100px]:hidden">
-                Drag to connect <span className="mx-2 opacity-40">·</span> Pinch
-                / scroll to zoom <span className="mx-2 opacity-40">·</span> Node
-                menu for actions
-              </div>
-            </div>
-            <div className="graph-bottom flex h-[43px] shrink-0 items-center justify-between border-t border-[#cbd5d0] px-4">
-              <span className="flex items-center gap-2 text-[10px] text-[#7e9085]">
-                <span
-                  className={status === "Compiled" ? "live-dot" : "error-dot"}
-                />
-                {status === "Compiled" ? "Graph compiled" : "Check graph"}
-              </span>
-              <div className="flex items-center gap-1">
-                {edges.some((e) => e.id === selectedEdgeId) && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    aria-label="Delete selected wire"
-                    onClick={() => {
-                      setEdges((es) =>
-                        es.filter((e) => e.id !== selectedEdgeId)
-                      )
-                      setSelectedEdgeId("")
-                      setDirty(true)
-                    }}
-                  >
-                    <Trash2 />
-                    Delete wire
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    download(
-                      new Blob(
-                        [
-                          JSON.stringify(
-                            { nodes, edges, name, presetIndex },
-                            null,
-                            2
-                          ),
-                        ],
-                        { type: "application/json" }
-                      ),
-                      "nodeart-graph.json"
-                    )
-                  }
-                  title="Download graph JSON"
-                >
-                  <ArrowDownToLine className="size-3" />
-                  <span className="text-[10px]">Graph</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowCode(true)}
-                >
-                  <Code2 className="size-3" />
-                  <span className="text-[10px]">GLSL</span>
-                </Button>
-              </div>
             </div>
           </section>
-          <aside className="preview-panel flex min-h-0 flex-col border-l border-[#cbd5d0]">
+          <aside className="preview-panel flex min-h-0 flex-col rounded-xl">
             <div className="flex h-[54px] shrink-0 items-center justify-between px-4">
-              <h2 className="flex items-center gap-2 text-[11px] font-semibold">
-                <Aperture className="size-4 text-[#799787]" />
+              <h2 className="flex items-center gap-2 text-[12px] font-semibold">
+                <Aperture className="size-4 text-[#294d65]" />
                 Live preview
               </h2>
-              <span className="flex items-center gap-1.5 text-[9px] text-[#789180]">
+              <span className="flex items-center gap-1.5 text-[12px] text-[#294d65]">
                 <span className="live-dot" />
                 WEBGL
               </span>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto max-[600px]:grid max-[600px]:grid-cols-2 max-[600px]:overflow-visible">
-              <div className="px-4">
-                <div
-                  className={
-                    full
-                      ? "preview-full fixed inset-8 z-40 flex items-center justify-center rounded-2xl p-10"
-                      : "preview-frame relative mx-auto max-w-[280px] overflow-hidden rounded-lg"
-                  }
-                >
+            <ResizablePanelGroup
+              orientation="vertical"
+              className="preview-split min-h-0 flex-1"
+            >
+              <ResizablePanel id="preview" defaultSize="55%" minSize="180px">
+                <div className="preview-content h-full overflow-y-auto px-4 pb-3">
                   <div
-                    className={full ? "aspect-square w-full max-w-[75vh]" : ""}
-                  >
-                    <Preview
-                      nodes={renderNodes}
-                      edges={renderEdges}
-                      playing={playing}
-                      reset={reset}
-                      resolution={resolution}
-                      canvasRef={canvas}
-                      onStatus={setStatus}
-                      onTime={setTime}
-                    />
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="icon-sm"
-                    className="preview-expand absolute right-3 bottom-3"
-                    aria-label={
-                      full ? "Close expanded preview" : "Expand preview"
+                    className={
+                      full
+                        ? "preview-full fixed inset-8 z-40 flex items-center justify-center rounded-2xl p-10"
+                        : "preview-frame relative mx-auto max-w-[280px] overflow-hidden rounded-lg"
                     }
-                    onClick={() => setFull(!full)}
                   >
-                    {full ? <X /> : <Expand />}
-                  </Button>
-                </div>
-                {status !== "Compiled" && (
-                  <p role="alert" className="mt-2 text-[11px] text-red-700">
-                    {status}
-                  </p>
-                )}
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[9px] tracking-wide text-[#7a887e]">
-                    {resolution} × {resolution}
-                    <span className="mx-2 opacity-40">/</span>1:1
-                  </span>
-                  <Select
-                    value={resolution}
-                    onValueChange={(v) => {
-                      if (v) {
-                        setResolution(Number(v))
-                        play("select", { emphasis: "subtle" })
+                    <div
+                      className={
+                        full ? "aspect-square w-full max-w-[75vh]" : ""
                       }
-                    }}
-                  >
-                    <SelectTrigger
-                      className="resolution-select"
-                      aria-label="Render resolution"
                     >
-                      <SelectValue>
-                        {resolution === 512 ? "Standard" : "High quality"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={512}>Standard · 512</SelectItem>
-                      <SelectItem value={1024}>High quality · 1024</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="transport mt-4 flex items-center gap-2 rounded-lg px-2 py-2">
-                  <Button
-                    variant="secondary"
-                    size="icon-sm"
-                    aria-label={playing ? "Pause animation" : "Play animation"}
-                    onClick={() => setPlaying(!playing)}
-                  >
-                    {playing ? (
-                      <Pause className="size-3" />
-                    ) : (
-                      <Play className="size-3" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Reset time and frame history"
-                    onClick={() => {
-                      setReset((r) => r + 1)
-                      setTime(0)
-                    }}
-                  >
-                    <RotateCcw className="size-3" />
-                  </Button>
-                  <span className="ml-1 font-mono text-[11px] text-[#607466]">
-                    {time.toFixed(2)}
-                    <span className="ml-1 text-[9px] opacity-50">s</span>
-                  </span>
-                  <div className="ml-auto flex items-center gap-1 text-[9px] text-[#819083]">
-                    <span className={playing ? "live-dot" : "pause-dot"} />
-                    {playing ? "PLAYING" : "PAUSED"}
-                  </div>
-                </div>
-              </div>
-              <div className="inspector mt-5 border-t border-[#d1dad3] px-4 pt-4 pb-5 max-[600px]:mt-0 max-[600px]:border-t-0">
-                <div className="mb-4 flex items-center justify-between">
-                  <span className="text-[9px] font-semibold tracking-[.14em] text-[#8c998e] uppercase">
-                    Node properties
-                  </span>
-                  {selected && (
-                    <span className="rounded border border-[#cfd9d0] px-1.5 py-0.5 text-[8px] text-[#8a9b8b]">
-                      {definitions[selected.data.kind].category}
-                    </span>
-                  )}
-                </div>
-                {selected ? (
-                  <>
-                    <h3 className="mb-1 flex items-center gap-2 text-[14px] font-semibold">
-                      <CategoryIcon
-                        name={
-                          selected.data.kind === "output"
-                            ? "output"
-                            : selected.data.kind === "ifs" ||
-                                selected.data.kind === "wfc"
-                              ? "generator"
-                              : "material"
-                        }
+                      <Preview
+                        nodes={renderNodes}
+                        edges={renderEdges}
+                        playing={playing}
+                        reset={reset}
+                        resolution={resolution}
+                        canvasRef={canvas}
+                        onStatus={setStatus}
+                        onTime={setTime}
                       />
-                      {definitions[selected.data.kind].title}
-                    </h3>
-                    <p className="mb-5 text-[10px] leading-relaxed text-[#829084]">
-                      {definitions[selected.data.kind].description}
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      className="preview-expand absolute right-3 bottom-3"
+                      aria-label={
+                        full ? "Close expanded preview" : "Expand preview"
+                      }
+                      onClick={() => setFull(!full)}
+                    >
+                      {full ? <X /> : <Expand />}
+                    </Button>
+                  </div>
+                  {status !== "Compiled" && (
+                    <p role="alert" className="mt-2 text-[12px] text-red-700">
+                      {status}
                     </p>
-                    {definitions[selected.data.kind].params.map((p) => {
-                      const port = parameterInput(selected.data.kind, p.key),
-                        driver =
-                          port === undefined
-                            ? undefined
-                            : edges.find(
-                                (e) =>
-                                  e.target === selectedId &&
-                                  e.targetHandle === String(port)
-                              )
-                      return (
-                        <div key={p.key} className="mb-4">
-                          <div className="mb-1.5 flex justify-between text-[10px]">
-                            <label
-                              id={`param-${p.key}`}
-                              className="text-[#657c6c]"
-                            >
-                              {p.label}
-                            </label>
-                            <output className="numeric-badge rounded px-1.5 py-0.5 font-mono text-[9px]">
-                              {driver
-                                ? "Connected"
-                                : p.key === "theme"
-                                  ? ["Prism", "Sunset", "Botanical", "Ocean"][
-                                      Math.round(selected.data.params[p.key])
-                                    ]
-                                  : selected.data.params[p.key].toFixed(
-                                      p.step === 1 ? 0 : 2
-                                    )}
-                            </output>
-                          </div>
-                          <Slider
-                            disabled={Boolean(driver)}
-                            aria-labelledby={`param-${p.key}`}
-                            aria-label={p.label}
-                            min={p.min}
-                            max={p.max}
-                            step={p.step}
-                            value={selected.data.params[p.key]}
-                            onValueChange={(v) =>
-                              changeParam(
-                                p.key,
-                                Array.isArray(v) ? v[0] : (v as number)
-                              )
-                            }
-                          />
-                          {driver && (
-                            <div className="mt-1 flex items-center justify-between gap-1 text-[9px] text-[#81917f]">
-                              <span>
-                                Driven by{" "}
-                                {
-                                  definitions[
-                                    nodes.find((n) => n.id === driver.source)!
-                                      .data.kind
-                                  ].title
-                                }
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Disconnect ${p.label}`}
-                                onClick={() => {
-                                  setEdges((es) =>
-                                    es.filter((e) => e.id !== driver.id)
-                                  )
-                                  setDirty(true)
-                                }}
-                              >
-                                <X className="size-3" />
-                                Disconnect
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                    <div className="mt-5 flex gap-2">
-                      <Button
-                        disabled={selected.data.kind === "output"}
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const id = newNodeId()
-                          setNodes((ns) => [
-                            ...ns,
-                            {
-                              ...selected,
-                              id,
-                              position: {
-                                x: selected.position.x + 50,
-                                y: selected.position.y + 70,
-                              },
-                            },
-                          ])
-                          setSelectedId(id)
-                          setDirty(true)
+                  )}
+
+                  <div className="transport mt-3 flex items-center gap-2 rounded-lg py-2">
+                    <Button
+                      variant="primary"
+                      size="icon-sm"
+                      aria-label={
+                        playing ? "Pause animation" : "Play animation"
+                      }
+                      onClick={() => setPlaying(!playing)}
+                    >
+                      {playing ? (
+                        <Pause className="size-3" />
+                      ) : (
+                        <Play className="size-3" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      aria-label="Reset time and frame history"
+                      onClick={() => {
+                        setReset((r) => r + 1)
+                        setTime(0)
+                      }}
+                    >
+                      <RotateCcw className="size-3" />
+                    </Button>
+                    <span className="ml-1 font-mono text-[12px] text-[#294d65]">
+                      {time.toFixed(2)}
+                      <span className="ml-1 text-[12px] opacity-50">s</span>
+                    </span>
+                    <div className="ml-auto">
+                      <Select
+                        value={resolution}
+                        onValueChange={(v) => {
+                          if (v) {
+                            setResolution(Number(v))
+                            play("select", { emphasis: "subtle" })
+                          }
                         }}
                       >
-                        <Copy className="size-3" />
-                        Duplicate
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Delete selected node"
-                        onClick={remove}
-                      >
-                        <Trash2 className="size-3" />
-                        Delete
-                      </Button>
+                        <SelectTrigger
+                          className="resolution-select"
+                          aria-label="Render resolution"
+                        >
+                          <SelectValue>
+                            {resolution === 512 ? "Standard" : "High quality"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={512}>Standard · 512</SelectItem>
+                          <SelectItem value={1024}>
+                            High quality · 1024
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </>
-                ) : (
-                  <div className="py-5 text-center text-[11px] leading-relaxed text-[#8b9a8c]">
-                    <Layers3 className="mx-auto mb-3 size-6 opacity-50" />
-                    Select a node to explore
-                    <br />
-                    its possibilities.
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              </ResizablePanel>
+              <ResizableHandle
+                withHandle
+                aria-label="Resize preview and properties"
+              />
+              <ResizablePanel id="properties" defaultSize="45%" minSize="160px">
+                <div className="inspector h-full overflow-y-auto px-4 pt-4 pb-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <span className="text-[12px] font-semibold tracking-[.14em] text-[#294d65] uppercase">
+                      Node properties
+                    </span>
+                    {selected && (
+                      <span className="rounded px-1.5 py-0.5 text-[12px] text-[#294d65]">
+                        {definitions[selected.data.kind].category}
+                      </span>
+                    )}
+                  </div>
+                  {selected ? (
+                    <>
+                      <h3 className="mb-1 flex items-center gap-2 text-[14px] font-semibold">
+                        <CategoryIcon
+                          name={
+                            selected.data.kind === "output"
+                              ? "output"
+                              : selected.data.kind === "ifs" ||
+                                  selected.data.kind === "wfc"
+                                ? "generator"
+                                : "material"
+                          }
+                        />
+                        {definitions[selected.data.kind].title}
+                      </h3>
+                      <p className="mb-5 text-[12px] leading-relaxed text-[#294d65]">
+                        {definitions[selected.data.kind].description}
+                      </p>
+                      {definitions[selected.data.kind].params.map((p) => {
+                        const port = parameterInput(selected.data.kind, p.key),
+                          driver =
+                            port === undefined
+                              ? undefined
+                              : edges.find(
+                                  (e) =>
+                                    e.target === selectedId &&
+                                    e.targetHandle === String(port)
+                                )
+                        return (
+                          <div key={p.key} className="mb-4">
+                            <div className="mb-1.5 flex justify-between text-[12px]">
+                              <label
+                                id={`param-${p.key}`}
+                                className="text-[#294d65]"
+                              >
+                                {p.label}
+                              </label>
+                              <output className="numeric-badge rounded px-1.5 py-0.5 font-mono text-[12px]">
+                                {driver
+                                  ? "Connected"
+                                  : p.key === "theme"
+                                    ? ["Prism", "Sunset", "Botanical", "Ocean"][
+                                        Math.round(selected.data.params[p.key])
+                                      ]
+                                    : selected.data.params[p.key].toFixed(
+                                        p.step === 1 ? 0 : 2
+                                      )}
+                              </output>
+                            </div>
+                            <Slider
+                              disabled={Boolean(driver)}
+                              aria-labelledby={`param-${p.key}`}
+                              aria-label={p.label}
+                              min={p.min}
+                              max={p.max}
+                              step={p.step}
+                              value={selected.data.params[p.key]}
+                              onValueChange={(v) =>
+                                changeParam(
+                                  p.key,
+                                  Array.isArray(v) ? v[0] : (v as number)
+                                )
+                              }
+                            />
+                            {driver && (
+                              <div className="mt-1 flex items-center justify-between gap-1 text-[12px] text-[#294d65]">
+                                <span>
+                                  Driven by{" "}
+                                  {
+                                    definitions[
+                                      nodes.find((n) => n.id === driver.source)!
+                                        .data.kind
+                                    ].title
+                                  }
+                                </span>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  aria-label={`Disconnect ${p.label}`}
+                                  onClick={() => {
+                                    setEdges((es) =>
+                                      es.filter((e) => e.id !== driver.id)
+                                    )
+                                    setDirty(true)
+                                  }}
+                                >
+                                  <X className="size-3" />
+                                  Disconnect
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div className="mt-5 flex gap-2">
+                        <Button
+                          disabled={selected.data.kind === "output"}
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            const id = newNodeId()
+                            setNodes((ns) => [
+                              ...ns,
+                              {
+                                ...selected,
+                                id,
+                                position: {
+                                  x: selected.position.x + 50,
+                                  y: selected.position.y + 70,
+                                },
+                              },
+                            ])
+                            setSelectedId(id)
+                            setDirty(true)
+                          }}
+                        >
+                          <Copy className="size-3" />
+                          Duplicate
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          aria-label="Delete selected node"
+                          onClick={remove}
+                        >
+                          <Trash2 className="size-3" />
+                          Delete
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="py-5 text-center text-[12px] leading-relaxed text-[#294d65]">
+                      <Layers3 className="mx-auto mb-3 size-6 opacity-50" />
+                      Select a node to explore
+                      <br />
+                      its possibilities.
+                    </div>
+                  )}
+                </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
           </aside>
         </div>
-        <footer className="status-bar flex h-[29px] shrink-0 items-center justify-between gap-3 px-4 text-[9px] text-[#88978c]">
-          <span className="flex items-center gap-2">
-            <span className="live-dot" />
-            All processing stays in your browser
-          </span>
-          <span className="hidden sm:block">
-            FIELDS → TEXTURES → HAPPY ACCIDENTS
-          </span>
-          <a
-            href="https://github.com/icons8/flat-color-icons"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Icons by Icons8 ↗
-          </a>
-        </footer>
+
         {notice && (
           <div
             role="status"
@@ -1216,7 +1185,7 @@ function Workspace() {
               </DialogTitle>
               <Button
                 autoFocus
-                variant="ghost"
+                variant="secondary"
                 size="icon-sm"
                 aria-label="Close dialog"
                 onClick={() => {
@@ -1228,7 +1197,7 @@ function Workspace() {
               </Button>
             </div>
             {help ? (
-              <div className="space-y-4 text-sm leading-relaxed text-[#667d6d]">
+              <div className="space-y-4 text-sm leading-relaxed text-[#294d65]">
                 <p>
                   Click a library node to add it. Drag from its right socket to
                   an input on another node. Select a node to adjust its
@@ -1247,8 +1216,8 @@ function Workspace() {
                   for feedback without a graph cycle.
                 </p>
                 <p>
-                  Try the example graphs above the canvas. Save stores your
-                  workspace on this device; the Graph button downloads a
+                  Find example graphs in Project options. Save stores your
+                  workspace on this device; Download graph JSON creates a
                   portable JSON backup.
                 </p>
                 <Button
@@ -1263,7 +1232,7 @@ function Workspace() {
               </div>
             ) : (
               <>
-                <pre className="max-h-[60vh] overflow-auto rounded-lg bg-[#223d34] p-4 text-[11px] leading-relaxed text-[#c2ded0]">
+                <pre className="max-h-[60vh] overflow-auto rounded-lg bg-transparent p-4 text-[12px] leading-relaxed text-[#294d65]">
                   {code}
                 </pre>
                 <Button
