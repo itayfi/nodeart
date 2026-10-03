@@ -5,6 +5,17 @@ import {
 } from "@huggingface/transformers"
 import { cleanCompletion } from "./completion-text"
 
+// Configure ONNX before creating any session. Inference already runs in this
+// app's worker, so an additional WASM proxy worker is unnecessary.
+if (env.backends.onnx.wasm) {
+  env.backends.onnx.wasm.proxy = false
+  env.backends.onnx.wasm.numThreads = 1
+}
+// This is an adapter hint; the browser/OS still chooses the actual GPU.
+if (env.backends.onnx.webgpu) {
+  env.backends.onnx.webgpu.powerPreference = "high-performance"
+}
+
 let generator: TextGenerationPipeline | undefined
 let busy = false
 self.onmessage = async (event: MessageEvent) => {
@@ -31,7 +42,14 @@ self.onmessage = async (event: MessageEvent) => {
         `onnx-community/Qwen2.5-Coder-${message.model}-Instruct`,
         {
           device: message.device,
+          // q4 uses float32 activations; q4f16 would use float16 instead.
           dtype: "q4",
+          session_options: {
+            freeDimensionOverrides: { batch_size: 1 },
+            // Keep sequence_length and KV-cache dimensions dynamic: overrides
+            // fix input shapes, rather than setting initial buffer capacities.
+            // preferredOutputChannelType is not an ONNX Runtime session option.
+          },
           progress_callback: (progress) =>
             self.postMessage({ type: "progress", progress }),
         }
