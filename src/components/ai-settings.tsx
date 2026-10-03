@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Sparkles, Download, Square } from "lucide-react"
+import { Sparkles, Download, Square, Clipboard } from "lucide-react"
 import { Button } from "./ui/button"
 import {
   Dialog,
@@ -58,6 +58,7 @@ export function AISettings({
   )
   const [cacheRevision, setCacheRevision] = useState(0),
     [cacheError, setCacheError] = useState("")
+  const [reportStatus, setReportStatus] = useState("")
   useEffect(() => {
     const gpuAPI = (
       navigator as Navigator & {
@@ -111,8 +112,28 @@ export function AISettings({
         onClick={() => setOpen(true)}
       >
         <Sparkles />
-        AI completion{loaded ? " · on" : ""}
+        AI completion
+        {state.phase === "error"
+          ? " · error"
+          : state.phase === "generating"
+            ? " · generating"
+            : loaded
+              ? " · on"
+              : ""}
       </Button>
+      {state.phase !== "off" && (
+        <span
+          className="max-w-64 text-xs break-words"
+          role={state.phase === "error" ? "alert" : "status"}
+          aria-live={
+            state.phase === "generating" || state.phase === "loading"
+              ? "off"
+              : undefined
+          }
+        >
+          {state.detail}
+        </span>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogTitle>AI completion</DialogTitle>
@@ -200,6 +221,27 @@ export function AISettings({
           <p className="text-sm break-words" role="status">
             {state.detail}
           </p>
+          <Button
+            variant="secondary"
+            data-cuelume-tap="tap"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(
+                  localCompletion.diagnosticReport()
+                )
+                setReportStatus("Diagnostic report copied.")
+              } catch {
+                setReportStatus("Unable to copy the report in this browser.")
+              }
+            }}
+          >
+            <Clipboard /> Copy diagnostic report
+          </Button>
+          {reportStatus && (
+            <p className="text-sm" role="status">
+              {reportStatus}
+            </p>
+          )}
           {loaded && state.loaded && (
             <p className="text-sm">
               Loaded: Qwen {state.loaded.model} ·{" "}

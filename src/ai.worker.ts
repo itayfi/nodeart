@@ -43,6 +43,21 @@ self.onmessage = async (event: MessageEvent) => {
           powerPreference: "high-performance",
         })
         if (!adapter) throw new Error("WebGPU is unavailable. Choose WASM.")
+        self.postMessage({
+          type: "gpu-info",
+          gpu: {
+            features: Array.from(adapter.features),
+            limits: {
+              maxBufferSize: adapter.limits.maxBufferSize,
+              maxStorageBufferBindingSize:
+                adapter.limits.maxStorageBufferBindingSize,
+              maxComputeWorkgroupStorageSize:
+                adapter.limits.maxComputeWorkgroupStorageSize,
+            },
+            vendor: adapter.info?.vendor,
+            architecture: adapter.info?.architecture,
+          },
+        })
         if (!adapter.features.has("shader-f16")) {
           throw new Error("This GPU does not support float16. Choose WASM.")
         }
@@ -154,6 +169,13 @@ self.onmessage = async (event: MessageEvent) => {
       )
       let tokens = 0
       const started = performance.now()
+      self.postMessage({
+        type: "generation-start",
+        id: message.id,
+        inputTokens: generator.tokenizer.encode(prompt, {
+          add_special_tokens: false,
+        }).length,
+      })
       const result = await generator(prompt, {
         max_new_tokens: cpu ? 24 : 64,
         do_sample: false,
