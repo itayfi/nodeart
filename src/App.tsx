@@ -1,11 +1,12 @@
 import {
   useCallback,
   useEffect,
-  createContext,
-  useContext,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
+  lazy,
+  Suspense,
   type CSSProperties,
 } from "react"
 import {
@@ -13,58 +14,50 @@ import {
   ReactFlowProvider,
   Background,
   Controls,
-  MiniMap,
   Handle,
   Position,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  useReactFlow,
-  useNodesInitialized,
-  type Connection,
+  applyNodeChanges,
+  applyEdgeChanges,
   type NodeProps,
+  type Connection,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { play } from "cuelume"
+import type { editor } from "monaco-editor"
 import {
-  Aperture,
-  ArrowDownToLine,
-  ArrowUpRight,
-  Check,
-  CircleHelp,
-  Code2,
-  Copy,
-  Expand,
-  FolderOpen,
-  Layers3,
-  Maximize2,
-  MoreHorizontal,
-  Pause,
-  Play,
-  Plus,
-  RotateCcw,
-  Save,
-  Search,
-  Sparkles,
-  Trash2,
   Workflow,
-  X,
+  FolderOpen,
+  Save,
+  Download,
+  Play,
+  Pause,
+  RotateCcw,
+  Plus,
+  Trash2,
+  Copy,
+  Sparkles,
+  MoreHorizontal,
+  ArrowUp,
+  ArrowDown,
+  Undo2,
+  Redo2,
+  CircleHelp,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { play } from "cuelume"
+import { Button } from "./components/ui/button"
+import { Input } from "./components/ui/input"
 import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable"
-import { Input } from "@/components/ui/input"
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "./components/ui/dialog"
 import {
   Select,
-  SelectContent,
-  SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+  SelectContent,
+  SelectItem,
+} from "./components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -73,1397 +66,1406 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@/components/ui/dropdown-menu"
+} from "./components/ui/dropdown-menu"
 import {
-  graphTypes,
-  inputSpec,
-  canConnect,
-  newNodeId,
-  type GraphType,
-} from "./graph"
-import { SoundToggle } from "@/components/sound-toggle"
-import { CategoryIcon, type CategoryIconName } from "@/components/category-icon"
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "./components/ui/resizable"
+import { SoundToggle } from "./components/sound-toggle"
+import { CategoryIcon, type CategoryIconName } from "./components/category-icon"
+import { PassPreview } from "./components/pass-preview"
+import { AISettings } from "./components/ai-settings"
+import { localCompletion, type AIState } from "./ai"
 import {
-  definitions,
-  makeNode,
-  preset,
-  presetNames,
-  compile,
-  type ArtNode,
-  type Kind,
-} from "./engine"
-import { Preview } from "./Preview"
-import { parseProject } from "./project"
-import {
-  loadLibrary,
-  saveProject,
-  deleteProject,
-  newProject,
-  type Library,
-  type LibraryProject,
-} from "./project-library"
-import { ParameterEditor } from "./components/parameter-editor"
-import { ProjectBrowser } from "./components/project-browser"
-import { ImageEditor } from "./components/image-editor"
-import type { Edge } from "@xyflow/react"
-type Actions = {
-  select: (id: string) => void
-  remove: (id: string) => void
-  duplicate: (id: string) => void
-  disconnect: (id: string) => void
-  types: Map<string, GraphType>
+  MAX_INPUTS,
+  labels,
+  makePass,
+  port,
+  starterProject,
+  exampleProject,
+  parsePassProject,
+  passAPI,
+  validatePorts,
+  renamePortCode,
+  canWire,
+  type PassKind,
+  type PassNode,
+  type PassProject,
+  type TexturePort,
+} from "./passes"
+import { readPassLibrary, savePassProject } from "./pass-library"
+
+const category: Record<PassKind, CategoryIconName> = {
+  glsl: "GLSL",
+  p5: "p5.js",
+  previous: "Previous frame",
+  image: "Image",
 }
-const NodeActions = createContext<Actions | null>(null)
-function ArtCard({ id, data, selected }: NodeProps<ArtNode>) {
-  const actions = useContext(NodeActions)!
-  const outputType = actions.types.get(id)
-  const def = definitions[data.kind]
+const colors: Record<PassKind, string> = {
+  glsl: "#368dd3",
+  p5: "#c170aa",
+  previous: "#bf974a",
+  image: "#6f9c72",
+}
+function PassCard({ data, selected }: NodeProps<PassNode>) {
   return (
     <div
-      className={`art-node w-[240px] rounded-xl ${selected ? "is-selected" : ""}`}
-      style={{ "--node-color": def.color } as CSSProperties}
+      className={`art-node w-52 rounded-xl ${selected ? "is-selected" : ""}`}
+      style={{ "--node-color": colors[data.kind] } as CSSProperties}
     >
-      <div className="node-heading flex items-center gap-2 rounded-t-xl px-3 py-3">
-        <CategoryIcon name={def.category} className="size-4" />
-        <span className="flex-1 text-[12px] font-semibold">{def.title}</span>
-        <DropdownMenu
-          onOpenChange={(open) => {
-            if (open) actions.select(id)
-          }}
-        >
-          <DropdownMenuTrigger
-            render={
-              <Button
-                className="nodrag nopan node-menu"
-                variant="secondary"
-                size="icon-sm"
-                aria-label={`Actions for ${def.title}`}
-                data-cuelume-tap="open"
-                onClick={(e) => e.stopPropagation()}
-              />
-            }
-          >
-            <MoreHorizontal className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="node-menu-popup"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <DropdownMenuItem
-              data-cuelume-tap="select"
-              onClick={() => actions.select(id)}
-            >
-              Edit properties
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={data.kind === "output"}
-              data-cuelume-tap="tap"
-              onClick={() => actions.duplicate(id)}
-            >
-              <Copy />
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              data-cuelume-tap="close"
-              onClick={() => actions.disconnect(id)}
-            >
-              Disconnect wires
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              data-cuelume-tap="close"
-              onClick={() => actions.remove(id)}
-            >
-              <Trash2 />
-              Delete node
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+        <CategoryIcon name={category[data.kind]} />
+        <span className="text-sm font-semibold">{data.label}</span>
       </div>
-      <div className="space-y-3 px-3 py-3">
-        {def.inputs.map((label, i) => (
-          <div
-            key={label}
-            className="relative flex items-center gap-2 text-[12px] text-[#294d65]"
-          >
-            <Handle
-              type="target"
-              position={Position.Left}
-              id={String(i)}
-              style={{ left: -19, top: "50%" }}
-            />
-            <span className="port-dot" />
-            {label}
-            <span className="ml-auto font-mono text-[12px] opacity-70">
-              {inputSpec(data.kind, i).types[0] === "numeric"
-                ? inputSpec(data.kind, i).uniform
-                  ? "uniform"
-                  : "pixel / U"
-                : inputSpec(data.kind, i).types.join(" / ")}
-            </span>
-          </div>
-        ))}
-        {data.kind === "uv" && (
-          <div className="coordinate-chip grid grid-cols-2 gap-1 rounded-md p-2 text-[12px]">
-            <span>
-              X <b className="float-right font-mono">0 → 1</b>
-            </span>
-            <span>
-              Y <b className="float-right font-mono">0 → 1</b>
-            </span>
-          </div>
-        )}
-        {data.kind === "time" && (
-          <div className="text-[12px] text-[#294d65]">
-            seconds ×{" "}
-            <span className="font-mono">{data.params.speed.toFixed(2)}</span>
-            <span className="live-dot ml-2 inline-block" />
-          </div>
-        )}
-        {def.params
-          .filter(
-            (p) => p.key !== "theme" && p.key !== "seed" && p.key !== "speed"
-          )
-          .slice(0, 2)
-          .map((p) => (
-            <div
-              key={p.key}
-              className="node-value flex justify-between rounded-md px-2 py-1.5 text-[12px]"
-            >
-              <span>{p.label}</span>
-              <span className="font-mono">{data.params[p.key].toFixed(2)}</span>
-            </div>
-          ))}
-        {data.kind === "palette" && (
-          <div
-            className={`palette-strip palette-${Math.round(data.params.theme)} h-6 rounded-md`}
+      <p className="px-4 pb-3 text-xs">{labels[data.kind]}</p>
+      {data.inputs.map((input) => (
+        <div
+          key={input.id}
+          className="relative flex items-center justify-between gap-3 px-4 pb-3 text-xs"
+        >
+          <Handle
+            type="target"
+            position={Position.Left}
+            id={input.id}
+            style={{ top: 8, left: -5 }}
           />
-        )}
-        {data.kind === "ifs" && (
-          <div className="text-[12px] text-[#294d65]">
-            Custom transforms · texture
-          </div>
-        )}
-        {data.kind === "wfc" && (
-          <div className="text-[12px] text-[#294d65]">
-            Custom tiles · texture
-          </div>
-        )}
-        {data.kind === "output" && (
-          <div className="output-chip flex items-center gap-2 rounded-md px-2 py-2 text-[12px]">
-            <span className="live-dot" />
-            Final render
-            <ArrowUpRight className="ml-auto size-3" />
-          </div>
-        )}
-        {def.output && (
-          <div className="relative mt-2 flex justify-end gap-2 text-[12px] text-[#294d65]">
-            <span>
-              {def.output === "vector"
-                ? "Coordinates"
-                : def.output === "scalar"
-                  ? "Value"
-                  : def.output === "color"
-                    ? "Color"
-                    : "Result"}
-            </span>
-            <span
-              className="font-mono text-[12px]"
-              title="Uniform values are shared by every pixel; fragment values vary per pixel."
-            >
-              {outputType?.scope === "uniform" ? "UNIFORM" : "PIXEL"}
-            </span>
-            <span className="port-dot" />
-            <Handle
-              type="source"
-              position={Position.Right}
-              style={{ right: -19, top: "50%" }}
-            />
-          </div>
-        )}
+          <span>{input.label}</span>
+          <span className="font-mono">{input.name}</span>
+        </div>
+      ))}
+      <div className="relative px-4 pt-1 pb-4 text-right font-mono text-xs">
+        texture
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={{ top: 9, right: -5 }}
+        />
       </div>
     </div>
   )
 }
-const nodeTypes = { art: ArtCard }
-const categories: CategoryIconName[] = [
-  "Inputs",
-  "Fields",
-  "Math",
-  "Color",
-  "Generators",
-  "Output",
-]
-function Workspace({ library }: { library: Library }) {
-  const [initial] = useState(() =>
-    library.projects.find((p) => p.id === library.activeId)!
+const nodeTypes = { pass: PassCard }
+const PassEditor = lazy(() =>
+  import("./components/pass-editor").then((module) => ({
+    default: module.PassEditor,
+  }))
+)
+function subscribeMobile(callback: () => void) {
+  const query = matchMedia("(max-width: 639px)")
+  query.addEventListener("change", callback)
+  return () => query.removeEventListener("change", callback)
+}
+function isMobile() {
+  return matchMedia("(max-width: 639px)").matches
+}
+function download(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob),
+    a = document.createElement("a")
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+function signature(p: PassProject) {
+  return JSON.stringify({
+    nodes: p.nodes.map((n) => ({ id: n.id, data: n.data })),
+    edges: p.edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      targetHandle: e.targetHandle,
+    })),
+    output: p.output,
+  })
+}
+function storedLayout(key: string) {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? "null") ?? undefined
+  } catch {
+    return undefined
+  }
+}
+function rememberLayout(key: string, layout: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(layout))
+  } catch {
+    /* Layout storage is optional. */
+  }
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <Workspace />
+    </ReactFlowProvider>
   )
-  const [projects, setProjects] = useState(library.projects)
-  const [projectId, setProjectId] = useState(library.activeId)
-  const [projectsOpen, setProjectsOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [storageError, setStorageError] = useState(library.error ?? "")
-  const [nodes, setNodes, onNodesChange] = useNodesState<ArtNode>(
-    initial?.nodes ?? preset(0).nodes
-  )
-  const [edges, setEdges, onEdgesChange] = useEdgesState(
-    initial?.edges ?? preset(0).edges
-  )
-  const [name, setName] = useState(initial?.name ?? "Chromatic flow")
-  const [presetIndex, setPresetIndex] = useState(initial?.presetIndex ?? 0)
-  const [search, setSearch] = useState("")
-  const [selectedEdgeId, setSelectedEdgeId] = useState("")
-  const [selectedId, setSelectedId] = useState(
-    initial?.nodes.find((n) =>
-      ["Fields", "Generators"].includes(definitions[n.data.kind].category)
-    )?.id ?? "noise"
-  )
-  const [playing, setPlaying] = useState(
-    () => !matchMedia("(prefers-reduced-motion: reduce)").matches
-  )
-  const [time, setTime] = useState(0)
-  const [reset, setReset] = useState(0)
-  const [resolution, setResolution] = useState(512)
-  const [status, setStatus] = useState("Compiling…")
+}
+function Workspace() {
+  const mobile = useSyncExternalStore(subscribeMobile, isMobile)
+  const [project, setProject] = useState<PassProject>(starterProject)
+  const [request, setRequest] = useState(() => ({ project, revision: 0 }))
+  const [runningProject, setRunningProject] = useState(project)
+  const [selectedId, setSelectedId] = useState(project.output)
+  const [projects, setProjects] = useState<PassProject[]>([])
+  const [initialized, setInitialized] = useState(false)
+  const [storage, setStorage] = useState("Loading projects…")
   const [notice, setNotice] = useState("")
-  const [showCode, setShowCode] = useState(false)
-  const [help, setHelp] = useState(false)
-  const [libraryOpen, setLibraryOpen] = useState(false)
-  const [full, setFull] = useState(false)
-  const [dirty, setDirty] = useState(!initial)
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const file = useRef<HTMLInputElement>(null)
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const flow = useReactFlow<ArtNode>()
-  const nodesInitialized = useNodesInitialized()
-  const [pendingFit, setPendingFit] = useState(false)
-  const queue = useRef<Promise<void>>(Promise.resolve())
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const snapshot = useMemo(
-    () =>
-      JSON.stringify({
-        nodes: nodes.map((n) => ({
-          id: n.id,
-          type: "art",
-          position: n.position,
-          data: n.data,
-        })),
-        edges: edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          targetHandle: e.targetHandle,
-        })),
-        name,
-        presetIndex,
-      }),
-    [nodes, edges, name, presetIndex]
-  )
-  const latestSnapshot = useRef(snapshot)
-  const savedSnapshot = useRef("")
+  const [status, setStatus] = useState("Compiling…")
+  const [playing, setPlaying] = useState(true),
+    [time, setTime] = useState(0),
+    [resolution, setResolution] = useState(512)
+  const [libraryOpen, setLibraryOpen] = useState(false),
+    [helpOpen, setHelpOpen] = useState(false),
+    [search, setSearch] = useState("")
+  const [ai, setAI] = useState<AIState>({
+      phase: "off",
+      detail: "No model loaded",
+    }),
+    [automatic, setAutomatic] = useState(false)
+  const [portDialog, setPortDialog] = useState<{
+    mode: "add" | "rename" | "remove"
+    input?: TexturePort
+  } | null>(null)
+  const [portName, setPortName] = useState(""),
+    [portLabel, setPortLabel] = useState(""),
+    [portError, setPortError] = useState("")
+  const [deleteNode, setDeleteNode] = useState(false)
+  const [maxInputs, setMaxInputs] = useState(MAX_INPUTS)
+  const [undoCount, setUndoCount] = useState(0)
+  const [redoCount, setRedoCount] = useState(0)
+  const canvasRef = useRef<HTMLCanvasElement>(null),
+    editorRef = useRef<editor.IStandaloneCodeEditor | null>(null),
+    jsonRef = useRef<HTMLInputElement>(null),
+    imageRef = useRef<HTMLInputElement>(null)
+  const history = useRef<PassProject[]>([]),
+    future = useRef<PassProject[]>([]),
+    lastCode = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
+    latest = useRef(project)
   useEffect(() => {
-    latestSnapshot.current = snapshot
-  }, [snapshot])
-  useEffect(() => {
-    if (!pendingFit || !nodesInitialized) return
-    let second = 0
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        void flow.fitView({ padding: 0.18, duration: 300 })
-        setPendingFit(false)
-      })
-    })
-    return () => {
-      cancelAnimationFrame(first)
-      cancelAnimationFrame(second)
-    }
-  }, [pendingFit, nodesInitialized, flow])
-  const selected = nodes.find((n) => n.id === selectedId)
-  const signature = useMemo(
-    () => JSON.stringify(nodes.map((n) => ({ id: n.id, data: n.data }))),
-    [nodes]
+    latest.current = project
+  }, [project])
+  const selected = project.nodes.find((n) => n.id === selectedId)
+  const dirty = signature(project) !== signature(runningProject)
+  const onStatus = useCallback((value: string) => setStatus(value), [])
+  const onTime = useCallback((value: number) => setTime(value), [])
+  const onApplied = useCallback(
+    (value: PassProject) => setRunningProject(value),
+    []
   )
-  const edgeSignature = useMemo(
-    () =>
-      JSON.stringify(
-        edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          targetHandle: e.targetHandle,
-        }))
-      ),
-    [edges]
-  )
-  // Positions and selection do not recompile the shader or clear frame history.
-  const renderNodes = useMemo(
-    () => JSON.parse(signature) as ArtNode[],
-    [signature]
-  )
-  const renderEdges = useMemo(
-    () => JSON.parse(edgeSignature) as Edge[],
-    [edgeSignature]
-  )
-  const notify = useCallback((message: string) => {
-    setNotice(message)
-    if (noticeTimer.current) clearTimeout(noticeTimer.current)
-    noticeTimer.current = setTimeout(() => setNotice(""), 3200)
+  const onRuntimeError = useCallback(() => setPlaying(false), [])
+  const onEditor = useCallback((value: editor.IStandaloneCodeEditor) => {
+    editorRef.current = value
   }, [])
-  const persist = useCallback(async () => {
-    const project: LibraryProject = {
-      ...JSON.parse(snapshot),
-      id: projectId,
-      updatedAt: Date.now(),
-    }
-    if (canvas.current && status === "Compiled") {
-      const thumbnail = document.createElement("canvas")
-      thumbnail.width = thumbnail.height = 200
-      thumbnail.getContext("2d")?.drawImage(canvas.current, 0, 0, 200, 200)
-      project.thumbnail = thumbnail.toDataURL("image/jpeg", 0.7)
-    }
-    const task = queue.current.catch(() => {}).then(() => saveProject(project))
-    queue.current = task
-    try {
-      await task
-      setProjects((previous) => [
-        project,
-        ...previous.filter((p) => p.id !== project.id),
-      ])
-      savedSnapshot.current = snapshot
-      if (latestSnapshot.current === snapshot) setDirty(false)
-      setStorageError("")
-      return true
-    } catch {
-      setStorageError(
-        "Unable to save locally. Download graph JSON to keep your work."
-      )
-      return false
-    }
-  }, [snapshot, projectId, status])
+  useEffect(() => localCompletion.subscribe(setAI), [])
   useEffect(() => {
-    if (busy || (savedSnapshot.current === snapshot && status !== "Compiled"))
-      return
-    autosaveTimer.current = setTimeout(() => {
-      void persist()
+    let alive = true
+    void readPassLibrary().then((library) => {
+      if (!alive) return
+      setProjects(library.projects)
+      setProject(library.active)
+      setRequest({ project: library.active, revision: 1 })
+      setSelectedId(library.active.output)
+      setNotice(library.error ?? "")
+      setStorage("Saved locally")
+      setInitialized(true)
+    })
+    const probe = document.createElement("canvas").getContext("webgl")
+    if (probe) {
+      const limit = Math.min(
+        MAX_INPUTS,
+        probe.getParameter(probe.MAX_TEXTURE_IMAGE_UNITS)
+      )
+      queueMicrotask(() => {
+        if (alive) setMaxInputs(limit)
+      })
+      probe.getExtension("WEBGL_lose_context")?.loseContext()
+    }
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!initialized) return
+    let active = true
+    const timeout = setTimeout(() => {
+      setStorage("Saving…")
+      void savePassProject(project)
+        .then(() => {
+          if (active) {
+            setStorage("Saved locally")
+            setProjects((previous) => [
+              project,
+              ...previous.filter((p) => p.id !== project.id),
+            ])
+          }
+        })
+        .catch(() => {
+          if (active) setStorage("Save failed · download JSON backup")
+        })
     }, 650)
     return () => {
-      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+      active = false
+      clearTimeout(timeout)
     }
-  }, [snapshot, persist, busy, status])
-  useEffect(() => {
-    const flush = () => {
-      if (
-        document.visibilityState === "hidden" &&
-        savedSnapshot.current !== snapshot
-      )
-        void persist()
+  }, [project, initialized])
+  function change(next: PassProject, code = false) {
+    if (!code || !lastCode.current) {
+      history.current = [...history.current.slice(-39), project]
     }
-    const warn = (event: BeforeUnloadEvent) => {
-      if (savedSnapshot.current !== latestSnapshot.current) {
-        event.preventDefault()
-        event.returnValue = ""
-      }
-    }
-    document.addEventListener("visibilitychange", flush)
-    window.addEventListener("beforeunload", warn)
-    return () => {
-      document.removeEventListener("visibilitychange", flush)
-      window.removeEventListener("beforeunload", warn)
-    }
-  }, [snapshot, persist])
-  const activate = (project: LibraryProject) => {
-    setProjectId(project.id)
-    setNodes(project.nodes)
-    setEdges(project.edges)
-    setName(project.name)
-    setPresetIndex(project.presetIndex)
-    setSelectedId("")
-    setSelectedEdgeId("")
-    setDirty(false)
-    setReset((r) => r + 1)
-    setPendingFit(true)
-    setProjectsOpen(false)
-    savedSnapshot.current = ""
+    clearTimeout(lastCode.current)
+    lastCode.current = code
+      ? setTimeout(() => {
+          lastCode.current = undefined
+        }, 650)
+      : undefined
+    future.current = []
+    setUndoCount(history.current.length)
+    setRedoCount(0)
+    setProject(next)
   }
-  const chooseProject = async (project: LibraryProject) => {
-    if (project.id === projectId) {
-      setProjectsOpen(false)
-      return
-    }
-    setBusy(true)
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-    try {
-      if (!(await persist())) {
-        notify("Save failed. Download a backup before switching projects.")
-        return
-      }
-      await saveProject(project)
-      activate(project)
-      play("select", { emphasis: "subtle" })
-    } catch {
-      notify("Unable to open this project.")
-    } finally {
-      setBusy(false)
-    }
-  }
-  const createProject = async (project: LibraryProject) => {
-    setBusy(true)
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-    try {
-      if (!(await persist())) {
-        notify("Save failed. Download a backup before creating a project.")
-        return
-      }
-      await saveProject(project)
-      setProjects((previous) => [project, ...previous])
-      activate(project)
-    } catch {
-      notify("Unable to create this project.")
-    } finally {
-      setBusy(false)
-    }
-  }
-  const changeData = (data: Partial<ArtNode["data"]>) => {
-    setNodes((ns) =>
-      ns.map((n) =>
-        n.id === selectedId ? { ...n, data: { ...n.data, ...data } } : n
-      )
+  function patchNode(data: Partial<PassNode["data"]>, code = false) {
+    if (!selected) return
+    change(
+      {
+        ...project,
+        nodes: project.nodes.map((n) =>
+          n.id === selected.id ? { ...n, data: { ...n.data, ...data } } : n
+        ),
+      },
+      code
     )
-    setDirty(true)
   }
-  const changeParam = (key: string, value: number) => {
-    setNodes((ns) =>
-      ns.map((n) =>
-        n.id === selectedId
-          ? {
-              ...n,
-              data: { ...n.data, params: { ...n.data.params, [key]: value } },
-            }
-          : n
-      )
-    )
-    setDirty(true)
+  function run(p = project) {
+    setRequest({ project: p, revision: request.revision + 1 })
+    setPlaying(true)
+    setNotice("")
   }
-  const connect = useCallback(
-    (c: Connection) => {
-      setEdges((es) =>
-        addEdge(
-          c,
-          es.filter(
-            (e) => !(e.target === c.target && e.targetHandle === c.targetHandle)
-          )
+  function activate(p: PassProject, execute = true) {
+    clearTimeout(lastCode.current)
+    lastCode.current = undefined
+    // Preserve edits even when the autosave debounce has not elapsed yet.
+    if (initialized) {
+      setProjects((previous) => [
+        project,
+        ...previous.filter((saved) => saved.id !== project.id),
+      ])
+      void savePassProject(project).catch(() =>
+        setNotice(
+          "Previous project is kept in this session, but local save failed."
         )
       )
-      setDirty(true)
-      play("select", { emphasis: "subtle" })
-    },
-    [setEdges]
-  )
-  const loadPreset = (index: number) => {
-    void createProject(
-      newProject(presetNames[index], {
-        ...preset(index),
-        name: presetNames[index],
-        presetIndex: index,
-      })
-    )
+    }
+    history.current = []
+    future.current = []
+    setUndoCount(0)
+    setRedoCount(0)
+    setProject(p)
+    setSelectedId(p.output)
+    setLibraryOpen(false)
+    if (execute) run(p)
   }
-  const addNode = (kind: Kind) => {
-    if (kind === "output" && nodes.some((n) => n.data.kind === "output")) {
-      setSelectedId(nodes.find((n) => n.data.kind === "output")!.id)
-      notify("This graph already has an image output.")
+  function add(kind: PassKind) {
+    if (project.nodes.length >= 64) {
+      setNotice("A project supports up to 64 nodes.")
       return
     }
-    const id = newNodeId(),
-      el = document.querySelector(".graph-workspace")!.getBoundingClientRect(),
-      pos = flow.screenToFlowPosition({
-        x: el.x + el.width / 2 - 100,
-        y: el.y + el.height / 2 - 80,
-      })
-    setNodes((ns) => [...ns, makeNode(kind, id, pos.x, pos.y)])
-    setSelectedId(id)
-    setDirty(true)
-  }
-  const save = async () => {
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-    if (await persist()) {
-      notify("Project saved on this device.")
-      play("success", { emphasis: "subtle" })
+    const n = makePass(kind)
+    n.position = {
+      x: 60 + (project.nodes.length % 3) * 250,
+      y: 60 + Math.floor(project.nodes.length / 3) * 190,
     }
+    change({
+      ...project,
+      nodes: [...project.nodes, n],
+      output: project.output || n.id,
+    })
+    setSelectedId(n.id)
   }
-  const download = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob),
-      a = document.createElement("a")
-    a.href = url
-    a.download = filename
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
-  const exportPng = () => {
-    canvas.current?.toBlob((blob) => {
-      if (blob) {
-        download(blob, `${name.replace(/[^a-z0-9-]/gi, "-")}.png`)
-        notify("PNG exported.")
-        play("success", { emphasis: "subtle" })
-      }
+  function wire(connection: Connection) {
+    if (!canWire(connection, project.nodes, project.edges)) {
+      setNotice(
+        "Feedback needs a Previous frame node. Each input accepts one texture."
+      )
+      return
+    }
+    change({
+      ...project,
+      edges: [
+        ...project.edges.filter(
+          (e) =>
+            !(
+              e.target === connection.target &&
+              e.targetHandle === connection.targetHandle
+            )
+        ),
+        { ...connection, id: crypto.randomUUID() },
+      ],
     })
   }
-  const removeNode = (id: string) => {
-    setNodes((ns) => ns.filter((n) => n.id !== id))
-    setEdges((es) => es.filter((e) => e.source !== id && e.target !== id))
-    setSelectedId("")
-    setDirty(true)
-  }
-  const remove = () => removeNode(selectedId)
-  const disconnectNode = (id: string) => {
-    setEdges((es) => es.filter((e) => e.source !== id && e.target !== id))
-    setDirty(true)
-  }
-  const duplicateNode = (id: string) => {
-    const original = nodes.find((n) => n.id === id)
-    if (!original || original.data.kind === "output") return
-    const copyId = newNodeId()
-    setNodes((ns) => [
-      ...ns,
-      {
-        ...original,
-        id: copyId,
-        position: { x: original.position.x + 50, y: original.position.y + 70 },
-      },
-    ])
-    setSelectedId(copyId)
-    setDirty(true)
-  }
-  const types = useMemo(() => {
-    try {
-      return graphTypes(renderNodes, renderEdges)
-    } catch {
-      return new Map<string, GraphType>()
-    }
-  }, [renderNodes, renderEdges])
-  const importGraph = async (f: File) => {
-    try {
-      const g = parseProject(JSON.parse(await f.text()))
-      compile(g.nodes, g.edges)
-      await createProject(newProject(g.name || "Untitled study", g))
-    } catch {
-      notify("Unable to import: choose a valid Nodeart graph JSON.")
+  function undo() {
+    clearTimeout(lastCode.current)
+    lastCode.current = undefined
+    const p = history.current.pop()
+    if (p) {
+      future.current.push(project)
+      setProject(p)
+      setUndoCount(history.current.length)
+      setRedoCount(future.current.length)
     }
   }
-  let code = ""
-  try {
-    code = compile(renderNodes, renderEdges).source
-  } catch (error) {
-    code = String(error)
+  function redo() {
+    clearTimeout(lastCode.current)
+    lastCode.current = undefined
+    const p = future.current.pop()
+    if (p) {
+      history.current.push(project)
+      setProject(p)
+      setUndoCount(history.current.length)
+      setRedoCount(future.current.length)
+    }
   }
-  return (
-    <NodeActions.Provider
-      value={{
-        select: setSelectedId,
-        remove: removeNode,
-        duplicate: duplicateNode,
-        disconnect: disconnectNode,
-        types,
-      }}
-    >
-      <main className="app-shell flex h-dvh min-h-0 flex-col overflow-hidden max-[600px]:h-auto max-[600px]:min-h-dvh max-[600px]:overflow-auto">
-        <header className="app-header flex h-[68px] shrink-0 items-center justify-between gap-4 px-5">
-          <div className="flex items-center gap-3">
-            <span className="brand-orb">
-              <Workflow className="size-5" />
-            </span>
-            <span className="text-[20px] font-semibold tracking-[-.8px]">
-              nodeart<span className="text-[#294d65]">.</span>
-            </span>
-            <span className="ml-3 hidden pl-5 text-[12px] tracking-wider text-[#294d65] md:block">
-              A SPACE FOR HAPPY ACCIDENTS
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <SoundToggle />
-            <Button
-              variant="secondary"
-              size="icon"
-              aria-label="Editor help"
-              onClick={() => setHelp(true)}
-            >
-              <CircleHelp className="size-4" />
-            </Button>
-          </div>
-        </header>
-        <div className="project-bar mx-4 flex h-[59px] shrink-0 items-center justify-between gap-3 rounded-xl px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <FolderOpen className="size-4 text-[#294d65]" />
-            <Input
-              className="project-name max-w-[180px]"
-              aria-label="Project name"
-              maxLength={120}
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value)
-                setDirty(true)
-              }}
-            />
-            <span className="hidden rounded-full px-2 py-1 text-[12px] text-[#294d65] sm:block">
-              {storageError
-                ? "Save unavailable"
-                : dirty
-                  ? "Saving…"
-                  : "Saved locally"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy}
-              onClick={() => setProjectsOpen(true)}
-            >
-              <FolderOpen />
-              Projects
-            </Button>
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              ref={file}
-              onChange={(e) => {
-                if (e.target.files?.[0]) void importGraph(e.target.files[0])
-                e.target.value = ""
-              }}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={save}
-              disabled={busy}
-              data-cuelume-tap={undefined}
-            >
-              <Save />
-              Save
-            </Button>
-            <Button
-              size="sm"
-              onClick={exportPng}
-              data-cuelume-tap={undefined}
-              disabled={status !== "Compiled"}
-            >
-              <ArrowDownToLine />
-              Export PNG
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    aria-label="Project options"
-                    data-cuelume-tap="open"
-                  />
-                }
-              >
-                <MoreHorizontal />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[220px]">
-                <DropdownMenuItem
-                  onClick={() =>
-                    void createProject(
-                      newProject("Untitled study", {
-                        nodes: [makeNode("output", "out", 300, 150)],
-                        edges: [],
-                        name: "Untitled study",
-                        presetIndex: 0,
-                      })
-                    )
-                  }
-                >
-                  <Plus />
-                  New project
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => file.current?.click()}>
-                  <FolderOpen />
-                  Import graph JSON
-                </DropdownMenuItem>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Sparkles />
-                    Example graphs
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-[220px]">
-                    {presetNames.map((presetName, i) => (
-                      <DropdownMenuItem
-                        key={presetName}
-                        data-cuelume-tap={undefined}
-                        onClick={() => loadPreset(i)}
-                      >
-                        {presetName}
-                        {presetIndex === i && <Check className="ml-auto" />}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                <DropdownMenuItem
-                  data-cuelume-tap="tap"
-                  onClick={() =>
-                    download(
-                      new Blob(
-                        [
-                          JSON.stringify(
-                            { nodes, edges, name, presetIndex },
-                            null,
-                            2
-                          ),
-                        ],
-                        { type: "application/json" }
-                      ),
-                      "nodeart-graph.json"
-                    )
-                  }
-                >
-                  <ArrowDownToLine />
-                  Download graph JSON
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  data-cuelume-tap="open"
-                  onClick={() => setShowCode(true)}
-                >
-                  <Code2 />
-                  View GLSL
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="hidden! max-[850px]:flex!"
-                  data-cuelume-tap="open"
-                  onClick={() => setLibraryOpen(true)}
-                >
-                  <Plus />
-                  Add a node
-                </DropdownMenuItem>
-                {edges.some((edge) => edge.id === selectedEdgeId) && (
-                  <DropdownMenuItem
-                    data-cuelume-tap="close"
-                    onClick={() => {
-                      setEdges((es) =>
-                        es.filter((edge) => edge.id !== selectedEdgeId)
-                      )
-                      setSelectedEdgeId("")
-                      setDirty(true)
-                    }}
-                  >
-                    <Trash2 />
-                    Delete selected wire
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-        <div className="workspace-grid grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_370px] gap-4 px-4 pb-4 max-[1100px]:grid-cols-[210px_minmax(0,1fr)_310px] max-[850px]:grid-cols-[minmax(0,1fr)_300px] max-[600px]:grid-cols-1 max-[600px]:grid-rows-[minmax(320px,1fr)_minmax(280px,1fr)] max-[600px]:overflow-y-auto min-[1500px]:grid-cols-[260px_minmax(0,1fr)_420px]">
-          <aside className="library-panel flex min-h-0 flex-col rounded-xl max-[850px]:hidden">
-            <div className="px-4 pt-5">
-              <div className="mb-1 flex items-center justify-between">
-                <h2 className="text-[13px] font-semibold">Node library</h2>
-                <span className="rounded px-1.5 text-[12px] text-[#294d65]">
-                  {Object.keys(definitions).length}
-                </span>
-              </div>
-              <p className="mb-4 text-[12px] text-[#294d65]">
-                Little pieces. Endless possibilities.
-              </p>
-              <div className="relative">
-                <Search className="absolute top-2.5 left-2.5 z-10 size-3.5 text-[#294d65]" />
-                <Input
-                  className="library-search pl-8!"
-                  placeholder="Find a node…"
-                  aria-label="Search nodes"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="library-scroll mx-3 mt-4 min-h-0 flex-1 overflow-y-auto rounded-lg px-3 pt-4 pb-4">
-              {categories.map((category) => {
-                const items = (
-                  Object.entries(definitions) as [
-                    Kind,
-                    (typeof definitions)[Kind],
-                  ][]
-                ).filter(
-                  ([, d]) =>
-                    d.category === category &&
-                    `${d.title} ${d.description}`
-                      .toLowerCase()
-                      .includes(search.toLowerCase())
-                )
-                return (
-                  items.length > 0 && (
-                    <section className="mb-7" key={category}>
-                      <h3 className="mb-2 flex items-center gap-2 px-2 text-[12px] font-semibold tracking-[.13em] text-[#294d65] uppercase">
-                        <CategoryIcon name={category} className="size-3.5" />
-                        {category}
-                      </h3>
-                      {items.map(([kind, d]) => (
-                        <Button
-                          key={kind}
-                          variant="secondary"
-                          data-slot="library-item"
-                          className="library-item mb-1 flex w-full justify-start gap-2.5 rounded-md px-2 text-[12px]"
-                          title={d.description}
-                          onClick={() => addNode(kind)}
-                          data-cuelume-tap=""
-                        >
-                          <span
-                            className="library-dot"
-                            style={{ background: d.color }}
-                          />
-                          <span className="flex-1 text-left">{d.title}</span>
-                          <Plus className="add-indicator size-3" />
-                        </Button>
-                      ))}
-                    </section>
-                  )
-                )
-              })}
-              {!Object.entries(definitions).some(([, d]) =>
-                `${d.title} ${d.description}`
-                  .toLowerCase()
-                  .includes(search.toLowerCase())
-              ) && (
-                <p className="p-2 text-xs text-[#294d65]">No matching nodes.</p>
-              )}
-            </div>
-          </aside>
-          <section className="flex min-h-0 min-w-0 flex-col">
-            <div className="graph-workspace relative min-h-0 flex-1">
-              <ReactFlow
-                nodes={nodes.map((n) => ({
+  function openPort(mode: "add" | "rename" | "remove", input?: TexturePort) {
+    let name = "source"
+    let i = 2
+    while (selected?.data.inputs.some((p) => p.name === name))
+      name = `texture${i++}`
+    setPortName(input?.name ?? name)
+    setPortLabel(input?.label ?? "Source")
+    setPortError("")
+    setPortDialog({ mode, input })
+  }
+  const renamedCode =
+    selected && portDialog?.input
+      ? renamePortCode(
+          selected.data.code,
+          selected.data.kind,
+          portDialog.input.name,
+          portName
+        )
+      : (selected?.data.code ?? "")
+  function applyPort() {
+    if (!selected || !portDialog) return
+    const { mode, input } = portDialog
+    const inputs =
+      mode === "add"
+        ? [...selected.data.inputs, port(portName, portLabel || portName)]
+        : mode === "remove"
+          ? selected.data.inputs.filter((p) => p.id !== input!.id)
+          : selected.data.inputs.map((p) =>
+              p.id === input!.id
+                ? { ...p, name: portName, label: portLabel || portName }
+                : p
+            )
+    try {
+      validatePorts(inputs)
+      if (inputs.length > maxInputs)
+        throw new Error("This GPU cannot support more texture inputs.")
+    } catch (error) {
+      setPortError(String(error))
+      return
+    }
+    change({
+      ...project,
+      nodes: project.nodes.map((n) =>
+        n.id === selected.id
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                inputs,
+                code: mode === "rename" ? renamedCode : n.data.code,
+              },
+            }
+          : n
+      ),
+      edges:
+        mode === "remove"
+          ? project.edges.filter(
+              (e) => !(e.target === selected.id && e.targetHandle === input!.id)
+            )
+          : project.edges,
+    })
+    setPortDialog(null)
+  }
+  async function importJSON(file?: File) {
+    if (!file) return
+    try {
+      if (file.size > 48 * 1024 * 1024)
+        throw new Error("Choose a project smaller than 48 MB.")
+      const p = parsePassProject(JSON.parse(await file.text()))
+      p.id = crypto.randomUUID()
+      activate(p, false)
+      setNotice("Imported as a new project. Review the code and press Run.")
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    }
+  }
+  async function importImage(file?: File) {
+    if (!file || !selected || selected.data.kind !== "image") return
+    const id = selected.id
+    try {
+      if (
+        !/^image\/(png|jpeg|webp|gif|avif)$/.test(file.type) ||
+        file.size > 20 * 1024 * 1024
+      )
+        throw new Error(
+          "Choose a PNG, JPEG, WebP, GIF, or AVIF smaller than 20 MB."
+        )
+      const bitmap = await createImageBitmap(file)
+      try {
+        if (bitmap.width > 4096 || bitmap.height > 4096)
+          throw new Error("Images may be up to 4096 × 4096 pixels.")
+        const canvas = document.createElement("canvas")
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        canvas.getContext("2d")!.drawImage(bitmap, 0, 0)
+        const src = canvas.toDataURL("image/png")
+        if (src.length > 24 * 1024 * 1024)
+          throw new Error("Decoded image is too large. Choose a smaller image.")
+        const current = latest.current
+        if (current.id !== project.id) return
+        change({
+          ...current,
+          nodes: current.nodes.map((n) =>
+            n.id === id
+              ? {
                   ...n,
-                  selected: n.id === selectedId,
-                }))}
-                edges={edges}
-                onNodesChange={(changes) => {
-                  onNodesChange(changes)
-                  if (
-                    changes.some(
-                      (c) => c.type === "remove" || c.type === "position"
-                    )
+                  data: {
+                    ...n.data,
+                    image: {
+                      src,
+                      name: file.name,
+                      width: bitmap.width,
+                      height: bitmap.height,
+                    },
+                  },
+                }
+              : n
+          ),
+        })
+      } finally {
+        bitmap.close()
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    }
+  }
+  const graphNodes = useMemo(
+    () => project.nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
+    [project.nodes, selectedId]
+  )
+  return (
+    <main
+      className={`app-shell flex min-h-0 flex-col gap-3 p-4 ${mobile ? "min-h-dvh" : "h-dvh"}`}
+    >
+      <header className="app-header flex shrink-0 flex-wrap items-center gap-4 px-2 pb-2">
+        <div className="brand-orb flex items-center justify-center rounded-full">
+          <Workflow className="size-5" />
+        </div>
+        <h1 className="text-xl font-bold tracking-tight">nodeart.</h1>
+        <p className="hidden text-xs tracking-widest md:block">
+          A SPACE FOR HAPPY ACCIDENTS
+        </p>
+        <div className="ml-auto flex gap-2">
+          <SoundToggle />
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label="Help"
+            data-cuelume-tap="open"
+            onClick={() => setHelpOpen(true)}
+          >
+            <CircleHelp />
+          </Button>
+        </div>
+      </header>
+      <section
+        aria-label="Project"
+        className="project-bar flex shrink-0 flex-wrap items-center gap-3 rounded-xl p-3"
+      >
+        <FolderOpen className="size-5" />
+        <Input
+          aria-label="Project name"
+          className="w-48"
+          value={project.name}
+          data-cuelume-type=""
+          onChange={(e) => change({ ...project, name: e.target.value })}
+        />
+        <span className="text-xs" role="status">
+          {storage}
+        </span>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            data-cuelume-tap="open"
+            onClick={() => setLibraryOpen(true)}
+          >
+            <FolderOpen />
+            Projects
+          </Button>
+          <Button
+            variant="secondary"
+            data-cuelume-tap="tap"
+            onClick={() =>
+              void savePassProject(project)
+                .then(() => {
+                  setStorage("Saved locally")
+                  play("success", { emphasis: "subtle" })
+                })
+                .catch(() => setStorage("Save failed · download JSON backup"))
+            }
+          >
+            <Save />
+            Save
+          </Button>
+          <Button
+            data-cuelume-tap="tap"
+            onClick={() =>
+              canvasRef.current?.toBlob((blob) => {
+                if (blob) {
+                  download(`${project.name}.png`, blob)
+                  play("ready", { emphasis: "subtle" })
+                }
+              })
+            }
+          >
+            <Download />
+            Export PNG
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label="Project options"
+                  data-cuelume-tap="open"
+                />
+              }
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Add node</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {(Object.keys(labels) as PassKind[]).map((kind) => (
+                    <DropdownMenuItem
+                      key={kind}
+                      data-cuelume-tap="select"
+                      onClick={() => add(kind)}
+                    >
+                      <CategoryIcon name={category[kind]} />
+                      {labels[kind]}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Examples</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {(["feedback", "blend", "mixed"] as const).map((kind) => (
+                    <DropdownMenuItem
+                      key={kind}
+                      data-cuelume-tap="select"
+                      onClick={() => activate(exampleProject(kind))}
+                    >
+                      {kind === "feedback"
+                        ? "Afterimage feedback"
+                        : kind === "blend"
+                          ? "Two texture blend"
+                          : "p5.js + GLSL"}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuItem
+                data-cuelume-tap="tap"
+                onClick={() => {
+                  download(
+                    `${project.name}.json`,
+                    new Blob([JSON.stringify(project, null, 2)], {
+                      type: "application/json",
+                    })
                   )
-                    setDirty(true)
-                }}
-                onEdgesChange={(changes) => {
-                  onEdgesChange(changes)
-                  setDirty(true)
-                }}
-                onConnect={connect}
-                nodeTypes={nodeTypes}
-                onNodeClick={(_, n) => {
-                  setSelectedId(n.id)
-                  play("select", { emphasis: "subtle" })
-                }}
-                onPaneClick={() => {
-                  setSelectedId("")
-                  setSelectedEdgeId("")
-                }}
-                isValidConnection={(c) => canConnect(c, nodes, edges)}
-                connectOnClick
-                connectionRadius={30}
-                onEdgeClick={(_, edge) => {
-                  setSelectedEdgeId(edge.id)
-                  setSelectedId("")
-                }}
-                onConnectEnd={(_, state) => {
-                  if (state.fromNode && state.toNode && !state.isValid)
-                    notify(
-                      "Incompatible connection. Generator controls require uniforms; definition ports require matching types."
-                    )
-                }}
-                fitView
-                fitViewOptions={{ padding: 0.18 }}
-                minZoom={0.25}
-                maxZoom={1.8}
-                deleteKeyCode={["Backspace", "Delete"]}
-                defaultEdgeOptions={{
-                  type: "default",
-                  style: { stroke: "#346988", strokeWidth: 2 },
                 }}
               >
-                <Background gap={18} size={1} color="#ccdce7" />
-                <Controls showInteractive={false} />
-                <MiniMap
-                  nodeColor={(n) => definitions[(n as ArtNode).data.kind].color}
-                  maskColor="#ffffffcc"
-                  pannable
-                  zoomable
-                  className="!h-[75px] !w-[115px]"
-                />
-              </ReactFlow>
-            </div>
-          </section>
-          <aside className="preview-panel flex min-h-0 flex-col rounded-xl">
-            <div className="flex h-[54px] shrink-0 items-center justify-between px-4">
-              <h2 className="flex items-center gap-2 text-[12px] font-semibold">
-                <Aperture className="size-4 text-[#294d65]" />
-                Live preview
-              </h2>
-              <span className="flex items-center gap-1.5 text-[12px] text-[#294d65]">
-                <span className="live-dot" />
-                WEBGL
-              </span>
-            </div>
-            <ResizablePanelGroup
-              orientation="vertical"
-              className="preview-split min-h-0 flex-1"
-            >
-              <ResizablePanel id="preview" defaultSize="55%" minSize="180px">
-                <div className="preview-content h-full overflow-y-auto px-4 pb-3">
-                  <div
-                    className={
-                      full
-                        ? "preview-full fixed inset-8 z-40 flex items-center justify-center rounded-2xl p-10"
-                        : "preview-frame relative mx-auto max-w-[280px] overflow-hidden rounded-lg"
-                    }
-                  >
-                    <div
-                      className={
-                        full ? "aspect-square w-full max-w-[75vh]" : ""
-                      }
-                    >
-                      <Preview
-                        nodes={renderNodes}
-                        edges={renderEdges}
-                        playing={playing}
-                        reset={reset}
-                        resolution={resolution}
-                        canvasRef={canvas}
-                        onStatus={setStatus}
-                        onTime={setTime}
-                      />
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="icon-sm"
-                      className="preview-expand absolute right-3 bottom-3"
-                      aria-label={
-                        full ? "Close expanded preview" : "Expand preview"
-                      }
-                      onClick={() => setFull(!full)}
-                    >
-                      {full ? <X /> : <Expand />}
-                    </Button>
-                  </div>
-                  {status !== "Compiled" && (
-                    <p role="alert" className="mt-2 text-[12px] text-red-700">
-                      {status}
-                    </p>
+                Download JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-cuelume-tap="tap"
+                onClick={() => jsonRef.current?.click()}
+              >
+                Import JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </section>
+      {notice && (
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-2 px-2 text-sm"
+        >
+          <span className="flex-1">{notice}</span>
+          <Button variant="secondary" size="sm" onClick={() => setNotice("")}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+      <input
+        ref={jsonRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={(e) => {
+          void importJSON(e.target.files?.[0])
+          e.target.value = ""
+        }}
+      />
+      <input
+        ref={imageRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        hidden
+        onChange={(e) => {
+          void importImage(e.target.files?.[0])
+          e.target.value = ""
+        }}
+      />
+      <div
+        className={`pass-workspace min-h-0 ${mobile ? "h-[1480px] flex-none" : "flex-1"}`}
+      >
+        <ResizablePanelGroup
+          key={mobile ? "mobile" : "desktop"}
+          orientation={mobile ? "vertical" : "horizontal"}
+          defaultLayout={storedLayout(
+            mobile ? "nodeart-layout-mobile" : "nodeart-layout-main"
+          )}
+          onLayoutChanged={(layout) =>
+            rememberLayout(
+              mobile ? "nodeart-layout-mobile" : "nodeart-layout-main",
+              layout
+            )
+          }
+        >
+          <ResizablePanel
+            id="code"
+            defaultSize={mobile ? "46%" : "64%"}
+            minSize="25%"
+          >
+            <section className="pass-panel flex h-full min-h-0 flex-col rounded-xl">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 p-3">
+                <h2 className="mr-auto">
+                  Code{" "}
+                  {dirty && (
+                    <span className="ml-2 text-xs font-normal">· draft</span>
                   )}
-
-                  <div className="transport mt-3 flex items-center gap-2 rounded-lg py-2">
+                </h2>
+                <Button
+                  variant="secondary"
+                  size="icon-sm"
+                  aria-label="Undo graph edit"
+                  disabled={!undoCount}
+                  data-cuelume-tap="navigate"
+                  onClick={undo}
+                >
+                  <Undo2 />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon-sm"
+                  aria-label="Redo graph edit"
+                  disabled={!redoCount}
+                  data-cuelume-tap="navigate"
+                  onClick={redo}
+                >
+                  <Redo2 />
+                </Button>
+                <AISettings
+                  state={ai}
+                  automatic={automatic}
+                  onAutomatic={setAutomatic}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    ai.phase !== "ready" ||
+                    !selected ||
+                    !["glsl", "p5"].includes(selected.data.kind)
+                  }
+                  data-cuelume-tap="tap"
+                  onClick={() => {
+                    editorRef.current?.focus()
+                    void editorRef.current
+                      ?.getAction("editor.action.inlineSuggest.trigger")
+                      ?.run()
+                  }}
+                >
+                  <Sparkles />
+                  Suggest
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!initialized}
+                  data-cuelume-tap="tap"
+                  onClick={() => run()}
+                >
+                  <Play />
+                  Run
+                </Button>
+              </div>
+              {selected ? (
+                <>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pb-3">
+                    <CategoryIcon name={category[selected.data.kind]} />
+                    <Input
+                      aria-label="Pass name"
+                      className="w-44"
+                      value={selected.data.label}
+                      data-cuelume-type=""
+                      onChange={(e) => patchNode({ label: e.target.value })}
+                    />
+                    <span className="mr-auto text-xs">
+                      {labels[selected.data.kind]}
+                    </span>
                     <Button
-                      variant="primary"
-                      size="icon-sm"
-                      aria-label={
-                        playing ? "Pause animation" : "Play animation"
+                      variant="secondary"
+                      size="sm"
+                      data-cuelume-tap="select"
+                      aria-pressed={project.output === selected.id}
+                      onClick={() =>
+                        change({ ...project, output: selected.id })
                       }
-                      onClick={() => setPlaying(!playing)}
                     >
-                      {playing ? (
-                        <Pause className="size-3" />
-                      ) : (
-                        <Play className="size-3" />
-                      )}
+                      {project.output === selected.id
+                        ? "Output pass"
+                        : "Use as output"}
                     </Button>
                     <Button
                       variant="secondary"
                       size="icon-sm"
-                      aria-label="Reset time and frame history"
+                      aria-label="Duplicate pass"
+                      data-cuelume-tap="tap"
                       onClick={() => {
-                        setReset((r) => r + 1)
-                        setTime(0)
+                        if (project.nodes.length >= 64) return
+                        const n = {
+                          ...selected,
+                          id: crypto.randomUUID(),
+                          position: {
+                            x: selected.position.x + 40,
+                            y: selected.position.y + 40,
+                          },
+                          data: {
+                            ...selected.data,
+                            label: `${selected.data.label} copy`,
+                            inputs: selected.data.inputs.map((p) => ({
+                              ...p,
+                              id: crypto.randomUUID(),
+                            })),
+                          },
+                        }
+                        change({ ...project, nodes: [...project.nodes, n] })
+                        setSelectedId(n.id)
                       }}
                     >
-                      <RotateCcw className="size-3" />
+                      <Copy />
                     </Button>
-                    <span className="ml-1 font-mono text-[12px] text-[#294d65]">
-                      {time.toFixed(2)}
-                      <span className="ml-1 text-[12px] opacity-50">s</span>
-                    </span>
-                    <div className="ml-auto">
-                      <Select
-                        value={resolution}
-                        onValueChange={(v) => {
-                          if (v) {
-                            setResolution(Number(v))
-                            play("select", { emphasis: "subtle" })
-                          }
-                        }}
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      aria-label="Delete pass"
+                      data-cuelume-tap="open"
+                      onClick={() => setDeleteNode(true)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                  <ResizablePanelGroup
+                    orientation="vertical"
+                    defaultLayout={storedLayout("nodeart-layout-editor")}
+                    onLayoutChanged={(layout) =>
+                      rememberLayout("nodeart-layout-editor", layout)
+                    }
+                  >
+                    <ResizablePanel id="editor" defaultSize="70%" minSize="25%">
+                      <div
+                        className="pass-editor h-full min-h-0 overflow-hidden"
+                        data-cuelume-type=""
+                        data-cuelume-emphasis="subtle"
                       >
-                        <SelectTrigger
-                          className="resolution-select"
-                          aria-label="Render resolution"
-                        >
-                          <SelectValue>
-                            {resolution === 512 ? "Standard" : "High quality"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={512}>Standard · 512</SelectItem>
-                          <SelectItem value={1024}>
-                            High quality · 1024
+                        {selected.data.kind === "glsl" ||
+                        selected.data.kind === "p5" ? (
+                          <Suspense
+                            fallback={
+                              <p className="p-4">Loading code editor…</p>
+                            }
+                          >
+                            <PassEditor
+                              node={selected}
+                              onChange={(code) => patchNode({ code }, true)}
+                              automatic={automatic}
+                              error={status}
+                              onReady={onEditor}
+                            />
+                          </Suspense>
+                        ) : (
+                          <div className="flex h-full flex-col items-center justify-center gap-4 overflow-auto p-6 text-center">
+                            <CategoryIcon
+                              name={category[selected.data.kind]}
+                              className="size-12"
+                            />
+                            <h3 className="text-lg font-semibold">
+                              {selected.data.label}
+                            </h3>
+                            <p className="max-w-md text-sm">
+                              {passAPI(selected)}
+                            </p>
+                            {selected.data.kind === "image" && (
+                              <>
+                                {selected.data.image && (
+                                  <img
+                                    src={selected.data.image.src}
+                                    className="max-h-40 max-w-full object-contain"
+                                    alt={selected.data.image.name}
+                                  />
+                                )}
+                                <Button
+                                  variant="secondary"
+                                  data-cuelume-tap="tap"
+                                  onClick={() => imageRef.current?.click()}
+                                >
+                                  Choose image
+                                </Button>
+                                {selected.data.image && (
+                                  <p className="font-mono text-xs">
+                                    {selected.data.image.width} ×{" "}
+                                    {selected.data.image.height}
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </ResizablePanel>
+                    <ResizableHandle
+                      withHandle
+                      aria-label="Resize code and texture inputs"
+                    />
+                    <ResizablePanel id="inputs" defaultSize="30%" minSize="12%">
+                      <div className="h-full overflow-y-auto p-4">
+                        <div className="mb-3 flex items-center gap-3">
+                          <h2 className="mr-auto">Texture inputs</h2>
+                          {["glsl", "p5"].includes(selected.data.kind) && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={
+                                selected.data.inputs.length >= maxInputs
+                              }
+                              data-cuelume-tap="open"
+                              onClick={() => openPort("add")}
+                            >
+                              <Plus />
+                              Add input
+                            </Button>
+                          )}
+                        </div>
+                        {selected.data.inputs.length ? (
+                          <div className="library-scroll rounded-lg p-2">
+                            {selected.data.inputs.map((input, index) => {
+                              const wire = project.edges.find(
+                                  (e) =>
+                                    e.target === selected.id &&
+                                    e.targetHandle === input.id
+                                ),
+                                source = project.nodes.find(
+                                  (n) => n.id === wire?.source
+                                )
+                              return (
+                                <div
+                                  className="flex flex-wrap items-center gap-2 p-2"
+                                  key={input.id}
+                                >
+                                  <div className="mr-auto">
+                                    <div className="text-sm font-medium">
+                                      {input.label}{" "}
+                                      <span className="ml-2 font-mono text-xs">
+                                        {input.name}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs">
+                                      {source
+                                        ? source.data.label
+                                        : "Unconnected · transparent black / null"}
+                                    </div>
+                                  </div>
+                                  {wire && (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      aria-label={`Disconnect ${input.label}`}
+                                      onClick={() =>
+                                        change({
+                                          ...project,
+                                          edges: project.edges.filter(
+                                            (e) => e.id !== wire.id
+                                          ),
+                                        })
+                                      }
+                                    >
+                                      Disconnect
+                                    </Button>
+                                  )}
+                                  {selected.data.kind !== "previous" && (
+                                    <>
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        data-cuelume-tap="open"
+                                        onClick={() =>
+                                          openPort("rename", input)
+                                        }
+                                      >
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        variant="secondary"
+                                        size="icon-sm"
+                                        disabled={index === 0}
+                                        aria-label={`Move ${input.label} up`}
+                                        data-cuelume-tap="select"
+                                        onClick={() => {
+                                          const inputs = [
+                                            ...selected.data.inputs,
+                                          ]
+                                          ;[inputs[index - 1], inputs[index]] =
+                                            [inputs[index], inputs[index - 1]]
+                                          patchNode({ inputs })
+                                        }}
+                                      >
+                                        <ArrowUp />
+                                      </Button>
+                                      <Button
+                                        variant="secondary"
+                                        size="icon-sm"
+                                        disabled={
+                                          index ===
+                                          selected.data.inputs.length - 1
+                                        }
+                                        aria-label={`Move ${input.label} down`}
+                                        data-cuelume-tap="select"
+                                        onClick={() => {
+                                          const inputs = [
+                                            ...selected.data.inputs,
+                                          ]
+                                          ;[inputs[index + 1], inputs[index]] =
+                                            [inputs[index], inputs[index + 1]]
+                                          patchNode({ inputs })
+                                        }}
+                                      >
+                                        <ArrowDown />
+                                      </Button>
+                                      <Button
+                                        variant="secondary"
+                                        size="icon-sm"
+                                        aria-label={`Remove ${input.label}`}
+                                        data-cuelume-tap="open"
+                                        onClick={() =>
+                                          openPort("remove", input)
+                                        }
+                                      >
+                                        <Trash2 />
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mb-4 text-sm">
+                            {selected.data.kind === "image"
+                              ? "Image sources have no texture inputs."
+                              : "This pass generates artwork without incoming textures."}
+                          </p>
+                        )}
+                        <details>
+                          <summary className="cursor-pointer text-sm font-semibold">
+                            Pass API
+                          </summary>
+                          <pre className="mt-3 overflow-x-auto font-mono text-xs whitespace-pre-wrap">
+                            {passAPI(selected)}
+                          </pre>
+                        </details>
+                      </div>
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
+                </>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+                  <h3>Select a node to edit its code</h3>
+                  <Button variant="secondary" onClick={() => add("glsl")}>
+                    <Plus />
+                    Add GLSL pass
+                  </Button>
+                </div>
+              )}
+              <p
+                className="max-h-24 shrink-0 overflow-auto px-4 py-2 text-xs"
+                role="status"
+              >
+                {status === "Running"
+                  ? dirty
+                    ? "Draft changes · press Run to apply"
+                    : "Running compiled graph"
+                  : status}
+              </p>
+            </section>
+          </ResizablePanel>
+          <ResizableHandle
+            withHandle
+            className="pass-divider-main"
+            aria-label="Resize code and preview workspace"
+          />
+          <ResizablePanel
+            id="right"
+            defaultSize={mobile ? "54%" : "36%"}
+            minSize="25%"
+          >
+            <ResizablePanelGroup
+              orientation="vertical"
+              defaultLayout={storedLayout("nodeart-layout-right")}
+              onLayoutChanged={(layout) =>
+                rememberLayout("nodeart-layout-right", layout)
+              }
+            >
+              <ResizablePanel id="preview" defaultSize="52%" minSize="22%">
+                <section className="preview-panel flex h-full min-h-0 flex-col rounded-xl p-4">
+                  <h2 className="mb-3 shrink-0">Preview</h2>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 pb-3">
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      aria-label={playing ? "Pause preview" : "Play preview"}
+                      data-cuelume-tap="toggle"
+                      onClick={() => setPlaying((v) => !v)}
+                    >
+                      {playing ? <Pause /> : <Play />}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      aria-label="Reset preview"
+                      data-cuelume-tap="tap"
+                      onClick={() => run(runningProject)}
+                    >
+                      <RotateCcw />
+                    </Button>
+                    <span className="mr-auto font-mono text-xs">
+                      {time.toFixed(1)}s
+                    </span>
+                    <Select
+                      value={String(resolution)}
+                      onValueChange={(v) => v && setResolution(Number(v))}
+                    >
+                      <SelectTrigger aria-label="Preview quality">
+                        <SelectValue>
+                          {resolution === 256
+                            ? "Draft"
+                            : resolution === 512
+                              ? "Standard"
+                              : "High"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[256, 512, 1024].map((size) => (
+                          <SelectItem
+                            key={size}
+                            value={String(size)}
+                            data-cuelume-tap="select"
+                          >
+                            {size === 256
+                              ? "Draft"
+                              : size === 512
+                                ? "Standard"
+                                : "High"}{" "}
+                            · {size} × {size}
                           </SelectItem>
-                        </SelectContent>
-                      </Select>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
+                    <div className="preview-frame aspect-square max-h-full max-w-full overflow-hidden rounded-lg">
+                      <PassPreview
+                        request={request}
+                        playing={playing}
+                        resolution={resolution}
+                        canvasRef={canvasRef}
+                        onStatus={onStatus}
+                        onTime={onTime}
+                        onApplied={onApplied}
+                        onRuntimeError={onRuntimeError}
+                      />
                     </div>
                   </div>
-                </div>
+                </section>
               </ResizablePanel>
               <ResizableHandle
                 withHandle
-                aria-label="Resize preview and properties"
+                aria-label="Resize preview and node graph"
               />
-              <ResizablePanel id="properties" defaultSize="45%" minSize="160px">
-                <div className="inspector h-full overflow-y-auto px-4 pt-4 pb-5">
-                  <div className="mb-4 flex items-center justify-between">
-                    <span className="text-[12px] font-semibold tracking-[.14em] text-[#294d65] uppercase">
-                      Node properties
-                    </span>
-                    {selected && (
-                      <span className="rounded px-1.5 py-0.5 text-[12px] text-[#294d65]">
-                        {definitions[selected.data.kind].category}
-                      </span>
-                    )}
+              <ResizablePanel id="graph" defaultSize="48%" minSize="22%">
+                <section className="library-panel flex h-full min-h-0 flex-col rounded-xl p-3">
+                  <h2 className="mb-3 shrink-0">Nodes</h2>
+                  <div className="graph-workspace min-h-0 flex-1">
+                    <ReactFlow
+                      key={project.id}
+                      nodes={graphNodes}
+                      edges={project.edges}
+                      nodeTypes={nodeTypes}
+                      fitView
+                      minZoom={0.25}
+                      maxZoom={1.5}
+                      onNodeClick={(_e, node) => setSelectedId(node.id)}
+                      onNodesChange={(changes) => {
+                        const edits = changes.filter((c) => c.type !== "select")
+                        if (edits.length) {
+                          const nodes = applyNodeChanges(edits, project.nodes)
+                          if (
+                            edits.every((edit) => edit.type === "dimensions")
+                          ) {
+                            setProject((current) => ({ ...current, nodes }))
+                            return
+                          }
+                          const ids = new Set(nodes.map((n) => n.id))
+                          change({
+                            ...project,
+                            nodes,
+                            edges: project.edges.filter(
+                              (e) => ids.has(e.source) && ids.has(e.target)
+                            ),
+                            output: ids.has(project.output)
+                              ? project.output
+                              : (nodes[0]?.id ?? ""),
+                          })
+                        }
+                      }}
+                      onEdgesChange={(changes) => {
+                        const edits = changes.filter((c) => c.type !== "select")
+                        if (edits.length)
+                          change({
+                            ...project,
+                            edges: applyEdgeChanges(edits, project.edges),
+                          })
+                      }}
+                      onConnect={wire}
+                      isValidConnection={(connection) =>
+                        canWire(connection, project.nodes, project.edges)
+                      }
+                      onConnectEnd={(_event, state) => {
+                        if (state.toNode && !state.isValid)
+                          setNotice(
+                            "Connect to a texture input. Feedback must go through Previous frame."
+                          )
+                      }}
+                      deleteKeyCode={null}
+                      defaultEdgeOptions={{ type: "smoothstep" }}
+                    >
+                      <Background gap={20} size={1} />
+                      <Controls showInteractive={false} />
+                    </ReactFlow>
                   </div>
-                  {selected ? (
-                    <>
-                      <h3 className="mb-1 flex items-center gap-2 text-[14px] font-semibold">
-                        <CategoryIcon
-                          name={definitions[selected.data.kind].category}
-                        />
-                        {definitions[selected.data.kind].title}
-                      </h3>
-                      <p className="mb-5 text-[12px] leading-relaxed text-[#294d65]">
-                        {definitions[selected.data.kind].description}
-                      </p>
-                      <div className="parameters-surface rounded-lg p-4">
-                        {["image", "alpha"].includes(selected.data.kind) && (
-                          <ImageEditor
-                            key={selected.id}
-                            node={selected}
-                            nodes={nodes}
-                            onData={changeData}
-                            onAlpha={() => {
-                              const id = newNodeId(),
-                                alpha = makeNode(
-                                  "alpha",
-                                  id,
-                                  selected.position.x,
-                                  selected.position.y + 200
-                                )
-                              alpha.data.image = selected.data.image
-                              const coordinates = edges.find(
-                                (edge) =>
-                                  edge.target === selected.id &&
-                                  edge.targetHandle === "0"
-                              )
-                              setNodes((previous) => [...previous, alpha])
-                              if (coordinates)
-                                setEdges((previous) => [
-                                  ...previous,
-                                  {
-                                    ...coordinates,
-                                    id: newNodeId(),
-                                    target: id,
-                                  },
-                                ])
-                              setSelectedId(id)
-                              setDirty(true)
-                            }}
-                          />
-                        )}
-                        <ParameterEditor
-                          key={selected.id}
-                          node={selected}
-                          nodes={nodes}
-                          edges={edges}
-                          onParam={changeParam}
-                          onData={changeData}
-                          onSelect={setSelectedId}
-                          onDisconnect={(id) => {
-                            setEdges((previous) =>
-                              previous.filter((edge) => edge.id !== id)
-                            )
-                            setDirty(true)
-                          }}
-                        />
-                      </div>
-                      <div className="mt-5 flex gap-2">
-                        <Button
-                          disabled={selected.data.kind === "output"}
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => {
-                            const id = newNodeId()
-                            setNodes((ns) => [
-                              ...ns,
-                              {
-                                ...selected,
-                                id,
-                                position: {
-                                  x: selected.position.x + 50,
-                                  y: selected.position.y + 70,
-                                },
-                              },
-                            ])
-                            setSelectedId(id)
-                            setDirty(true)
-                          }}
-                        >
-                          <Copy className="size-3" />
-                          Duplicate
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          aria-label="Delete selected node"
-                          onClick={remove}
-                        >
-                          <Trash2 className="size-3" />
-                          Delete
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="py-5 text-center text-[12px] leading-relaxed text-[#294d65]">
-                      <Layers3 className="mx-auto mb-3 size-6 opacity-50" />
-                      Select a node to explore
-                      <br />
-                      its possibilities.
-                    </div>
-                  )}
-                </div>
+                </section>
               </ResizablePanel>
             </ResizablePanelGroup>
-          </aside>
-        </div>
-
-        {storageError && (
-          <div
-            role="alert"
-            className="fixed bottom-3 left-4 z-40 max-w-[80vw] rounded-lg bg-[#edf1f4] px-4 py-2 text-[12px] text-red-800"
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+      <Dialog
+        open={!!portDialog}
+        onOpenChange={(open) => {
+          if (!open) setPortDialog(null)
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+          <DialogTitle>
+            {portDialog?.mode === "remove"
+              ? "Remove texture input"
+              : portDialog?.mode === "rename"
+                ? "Edit texture input"
+                : "Add texture input"}
+          </DialogTitle>
+          <DialogDescription>
+            Inputs keep a stable identity. Their order and labels do not change
+            connections.
+          </DialogDescription>
+          {portDialog?.mode === "remove" ? (
+            <>
+              <p>
+                The connection to <b>{portDialog.input?.label}</b> will be
+                removed. Code references remain visible for you to update.
+              </p>
+              <pre className="max-h-40 overflow-auto text-xs whitespace-pre-wrap">
+                {selected?.data.code
+                  .split("\n")
+                  .filter((line) => line.includes(portDialog.input?.name ?? ""))
+                  .join("\n") || "No code references found."}
+              </pre>
+            </>
+          ) : (
+            <>
+              <label className="grid gap-2">
+                Label
+                <Input
+                  value={portLabel}
+                  data-cuelume-type=""
+                  onChange={(e) => setPortLabel(e.target.value)}
+                />
+              </label>
+              <label className="grid gap-2">
+                Code identifier
+                <Input
+                  value={portName}
+                  className="font-mono"
+                  data-cuelume-type=""
+                  onChange={(e) => setPortName(e.target.value)}
+                />
+              </label>
+              {portDialog?.mode === "rename" && (
+                <>
+                  <p className="text-xs">
+                    Review updated code. Direct identifier references and
+                    inputs.name / inputs["name"] accesses are updated; aliased
+                    or dynamic accesses need manual review. Undo restores the
+                    whole edit.
+                  </p>
+                  <pre className="max-h-48 overflow-auto font-mono text-xs whitespace-pre-wrap">
+                    {renamedCode}
+                  </pre>
+                </>
+              )}
+            </>
+          )}
+          {portError && <p role="alert">{portError}</p>}
+          <Button
+            variant={portDialog?.mode === "remove" ? "destructive" : "primary"}
+            data-cuelume-tap="tap"
+            onClick={applyPort}
           >
-            {storageError}
-          </div>
-        )}
-        <ProjectBrowser
-          open={projectsOpen}
-          onOpenChange={setProjectsOpen}
-          projects={projects}
-          activeId={projectId}
-          busy={busy}
-          onChoose={(project) => void chooseProject(project)}
-          onNew={() =>
-            void createProject(
-              newProject("Untitled study", {
-                nodes: [makeNode("output", "out", 300, 150)],
-                edges: [],
-                name: "Untitled study",
-                presetIndex: 0,
-              })
-            )
-          }
-          onDuplicate={(project) =>
-            void createProject(
-              newProject(
-                `${project.name} copy`,
-                project.id === projectId ? JSON.parse(snapshot) : project
-              )
-            )
-          }
-          onImport={() => file.current?.click()}
-          onDelete={async (project) => {
-            if (project.id === projectId) return false
-            setBusy(true)
-            try {
-              await deleteProject(project.id)
-              setProjects((previous) =>
-                previous.filter((p) => p.id !== project.id)
-              )
-              play("success", { emphasis: "subtle" })
-              return true
-            } catch {
-              notify("Unable to delete this project.")
-              return false
-            } finally {
-              setBusy(false)
-            }
-          }}
-        />
-        {notice && (
-          <div
-            role="status"
-            className="toast fixed bottom-12 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full px-5 py-3 text-xs"
+            {portDialog?.mode === "remove" ? "Remove input" : "Apply"}
+          </Button>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={deleteNode} onOpenChange={setDeleteNode}>
+        <DialogContent>
+          <DialogTitle>Delete {selected?.data.label}?</DialogTitle>
+          <DialogDescription>
+            This removes the pass and its connections. You can undo this edit.
+          </DialogDescription>
+          <Button
+            variant="destructive"
+            data-cuelume-tap="tap"
+            onClick={() => {
+              if (selected) {
+                const nodes = project.nodes.filter((n) => n.id !== selected.id)
+                change({
+                  ...project,
+                  nodes,
+                  edges: project.edges.filter(
+                    (e) => e.source !== selected.id && e.target !== selected.id
+                  ),
+                  output:
+                    project.output === selected.id
+                      ? (nodes[0]?.id ?? "")
+                      : project.output,
+                })
+                setSelectedId(nodes[0]?.id ?? "")
+              }
+              setDeleteNode(false)
+            }}
           >
-            <Check className="size-3.5" />
-            {notice}
-          </div>
-        )}
-        <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
-          <DialogContent className="modal-surface !max-w-lg">
-            <DialogTitle>Add a node</DialogTitle>
+            <Trash2 />
+            Delete pass
+          </Button>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
+        <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-lg">
+          <DialogTitle>Projects</DialogTitle>
+          <DialogDescription>
+            Pass projects are saved locally. Earlier Nodeart graphs remain in
+            their original storage.
+          </DialogDescription>
+          <div className="flex gap-2">
             <Input
-              placeholder="Find a node…"
-              aria-label="Search node picker"
+              aria-label="Search projects"
+              placeholder="Search projects"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <div className="grid max-h-[60vh] grid-cols-2 gap-2 overflow-y-auto">
-              {(
-                Object.entries(definitions) as [
-                  Kind,
-                  (typeof definitions)[Kind],
-                ][]
+            <Button
+              variant="secondary"
+              data-cuelume-tap="tap"
+              onClick={() => activate(starterProject())}
+            >
+              <Plus />
+              New
+            </Button>
+          </div>
+          <div className="library-scroll min-h-0 overflow-auto rounded-lg p-2">
+            {projects
+              .filter((p) =>
+                p.name.toLowerCase().includes(search.toLowerCase())
               )
-                .filter(([, d]) =>
-                  d.title.toLowerCase().includes(search.toLowerCase())
-                )
-                .map(([kind, d]) => (
-                  <Button
-                    variant="secondary"
-                    key={kind}
-                    className="justify-start"
-                    onClick={() => {
-                      addNode(kind)
-                      setLibraryOpen(false)
-                    }}
-                  >
-                    <Plus className="size-3" />
-                    {d.title}
-                  </Button>
-                ))}
-            </div>
-          </DialogContent>
-        </Dialog>
-        <Dialog
-          open={showCode || help}
-          onOpenChange={(open) => {
-            if (!open) {
-              setShowCode(false)
-              setHelp(false)
-            }
-          }}
-        >
-          <DialogContent
-            showCloseButton={false}
-            className="modal-surface !max-w-2xl rounded-2xl p-6"
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <DialogTitle className="font-semibold">
-                {help
-                  ? "A little guide to the playground"
-                  : "Your graph, in GLSL"}
-              </DialogTitle>
-              <Button
-                autoFocus
-                variant="secondary"
-                size="icon-sm"
-                aria-label="Close dialog"
-                onClick={() => {
-                  setShowCode(false)
-                  setHelp(false)
-                }}
-              >
-                <X />
-              </Button>
-            </div>
-            {help ? (
-              <div className="space-y-4 text-sm leading-relaxed text-[#294d65]">
-                <p>
-                  Click a library node to add it. Drag from its right socket to
-                  an input on another node. Select a node to adjust its
-                  properties. Select a wire and press Delete to disconnect it.
-                </p>
-                <p>
-                  Coordinates describe each pixel. Fields produce numbers,
-                  palettes turn them into colors, and Image output displays the
-                  result. Scalar values broadcast across color channels;
-                  coordinates use the first two channels.
-                </p>
-                <p>
-                  IFS and wave collapse generate textures. Connect warped
-                  coordinates to sample them, then use a palette or blend them
-                  with any other field. Previous frame samples the last image
-                  for feedback without a graph cycle.
-                </p>
-                <p>
-                  Projects opens your local project library. Changes save
-                  automatically on this device. Example graphs create separate
-                  projects; Download graph JSON includes imported images in a
-                  portable backup.
-                </p>
-                <p>
-                  Enter exact parameter values and press Enter, or use Shift +
-                  arrow keys for fine adjustments. Parameter sockets accept
-                  uniforms from Time, Value, and math nodes. Image texture and
-                  Image alpha use imported project images; Composite blends them
-                  with masks and procedural artwork.
-                </p>
-                <Button
-                  onClick={() => {
-                    setHelp(false)
-                    flow.fitView({ padding: 0.18 })
-                  }}
+              .map((p) => (
+                <button
+                  className="library-item flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left"
+                  key={p.id}
+                  data-cuelume-tap="select"
+                  onClick={() => activate(p)}
                 >
-                  <Maximize2 />
-                  Back to the playground
-                </Button>
-              </div>
-            ) : (
-              <>
-                <pre className="max-h-[60vh] overflow-auto rounded-lg bg-transparent p-4 text-[12px] leading-relaxed text-[#294d65]">
-                  {code}
-                </pre>
-                <Button
-                  className="mt-4"
-                  onClick={() =>
-                    download(
-                      new Blob([code], { type: "text/plain" }),
-                      "nodeart.frag"
-                    )
-                  }
-                >
-                  <ArrowDownToLine />
-                  Download shader
-                </Button>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
-      </main>
-    </NodeActions.Provider>
-  )
-}
-export default function App() {
-  const [library, setLibrary] = useState<Library | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void loadLibrary().then((value) => {
-      if (!cancelled) setLibrary(value)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-  if (!library)
-    return (
-      <div
-        className="flex min-h-screen items-center justify-center text-sm"
-        role="status"
-      >
-        Opening your projects…
-      </div>
-    )
-  return (
-    <ReactFlowProvider>
-      <Workspace library={library} />
-    </ReactFlowProvider>
+                  <Workflow className="size-4" />
+                  <span className="mr-auto">{p.name}</span>
+                  <span className="text-xs">{p.nodes.length} nodes</span>
+                </button>
+              ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="max-h-[85dvh] overflow-auto sm:max-w-lg">
+          <DialogTitle>Every node is a pass</DialogTitle>
+          <DialogDescription>
+            Write code, connect textures, and build feedback loops.
+          </DialogDescription>
+          <p>
+            Select a node to edit it. Add nodes from Project options. Add named
+            texture inputs below the code, then drag an output socket to an
+            input socket.
+          </p>
+          <p>
+            GLSL uniforms are generated in Pass API. p5.js uses setup(p) and
+            draw(p, inputs, time, frame); Nodeart owns the canvas and animation
+            loop. Use Previous frame between passes to create feedback,
+            including a pass feeding itself.
+          </p>
+          <p>
+            Run applies the entire draft and resets history. Invalid drafts
+            leave the last valid graph running. Reset restarts the running
+            graph; pause freezes its history. Drag or focus and use arrow keys
+            on dividers to resize panes.
+          </p>
+          <p>
+            AI models load only on demand from AI completion. Code inference
+            happens locally. Imported p5.js is JavaScript executing in this
+            page; review imported code before Run.
+          </p>
+        </DialogContent>
+      </Dialog>
+    </main>
   )
 }
