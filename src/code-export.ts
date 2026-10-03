@@ -1,15 +1,8 @@
 import { strToU8, zipSync } from "fflate"
 import { passAPI, type PassProject } from "./passes.ts"
+import { safeFilename } from "./filename.ts"
+export { safeFilename } from "./filename.ts"
 
-export function safeFilename(name: string) {
-  return (
-    name
-      .normalize("NFKC")
-      .replace(/[^a-zA-Z0-9_-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 70) || "nodeart"
-  )
-}
 export function projectCodeZip(project: PassProject): Uint8Array {
   const files: Record<string, Uint8Array> = {}
   const manifest = project.nodes.map((node, i) => {

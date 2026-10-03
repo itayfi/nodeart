@@ -1,4 +1,5 @@
 import { PassRenderer } from "../src/pass-renderer"
+import { glslSnippets, insertGLSLSnippet } from "../src/glsl-snippets"
 import {
   creativeExamples,
   creativeProject,
@@ -321,6 +322,20 @@ await check(
       } finally {
         r.dispose()
       }
+    }
+  }
+)
+await check(
+  "snippet library helpers compile together in a real GLSL pass",
+  async () => {
+    const node = makePass("glsl")
+    for (const s of glslSnippets)
+      node.data.code = insertGLSLSnippet(node.data.code, s.id).code
+    const { r } = await renderer(project([node]))
+    try {
+      r.render(0)
+    } finally {
+      r.dispose()
     }
   }
 )

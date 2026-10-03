@@ -123,7 +123,17 @@ Earlier node graphs and their original IndexedDB/localStorage data remain untouc
 
 p5 code is ordinary JavaScript executing in the page, not a sandbox. Review imported code before Run. The persistent Sound toggle controls subtle Cuelume interaction cues; surface motion honors prefers-reduced-motion.
 
-## Verification
+## Fullscreen, video and snippets
+
+The Preview fullscreen button uses the browser's native Fullscreen API. Exit with Escape or the Exit fullscreen button. Artwork preserves its aspect ratio and the selected rendering resolution.
+
+Export video records the applied graph locally in real time, without audio. Choose 5–60 seconds and 24, 30 or 60 fps; WebM and MP4 formats appear only when the browser supports their encoder. Playback resumes during recording and its previous state is restored afterward. Stop & download saves a shorter clip; Cancel recording or closing the dialog discards it. Run, reset, quality changes and project switching are locked during capture. Keep the tab visible; achievable frame rate depends on rendering speed.
+
+GLSL snippets in the code toolbar opens a searchable library of 13 noise, shape, transform, color and blending helpers. Insert functions adds editable source and dependencies once, preserving main(). Usage examples explain how to call them; adapt example texture names to the pass's actual inputs. Helpers use a `na_` prefix. Modified definitions with the same name produce a visible conflict instead of being overwritten. Insertion participates in editor and graph undo.
+
+With the dev server running, `/tests/video.html` checks actual local video encoding, decoding, dimensions, cancellation and early stop.
+
+## Verification checks
 
 `pnpm test` covers graph order, cycle rejection, port identity, input validation, code renaming, project roundtrips, and existing legacy behavior.
 
