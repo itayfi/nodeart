@@ -1,5 +1,10 @@
-export type AIModel = "0.5B" | "1.5B"
-export type AIDevice = "webgpu" | "wasm"
+import {
+  aiModelConfig,
+  isMobileDevice,
+  type AIModel,
+  type AIDevice,
+} from "./ai-config"
+export type { AIModel, AIDevice } from "./ai-config"
 export type AIState = {
   phase: "off" | "loading" | "ready" | "generating" | "error"
   detail: string
@@ -31,7 +36,7 @@ class LocalCompletion {
     const loaded = { model, device }
     this.update({
       phase: "loading",
-      detail: "Loading selected model (q4)…",
+      detail: `Loading selected model (${aiModelConfig(model, device).dtype})…`,
       loaded,
     })
     try {
@@ -42,6 +47,19 @@ class LocalCompletion {
       worker.onmessage = (event) => {
         if (this.worker !== worker) return
         const message = event.data
+        if (message.type === "stage") {
+          this.update({ phase: "loading", detail: message.detail, loaded })
+        }
+        if (
+          message.type === "generation-progress" &&
+          this.requests.has(message.id)
+        ) {
+          this.update({
+            phase: "generating",
+            detail: `Suggesting… ${message.tokens} tokens · ${message.seconds}s`,
+            loaded,
+          })
+        }
         if (message.type === "progress") {
           const p = message.progress
           this.update({
@@ -55,7 +73,7 @@ class LocalCompletion {
         }
         if (message.type === "ready") {
           try {
-            localStorage.setItem(`nodeart-ai-cached-base-${model}-q4`, "true")
+            localStorage.setItem(aiModelConfig(model, device).cacheKey, "true")
           } catch {
             /* Cache hint is optional. */
           }
@@ -85,7 +103,14 @@ class LocalCompletion {
           event.message || "AI worker failed. Try WASM or the smaller model.",
           loaded
         )
-      worker.postMessage({ type: "load", model, device })
+      // WorkerNavigator does not expose maxTouchPoints, which is needed to
+      // recognize iPads that send a desktop Macintosh user agent.
+      worker.postMessage({
+        type: "load",
+        model,
+        device,
+        mobile: isMobileDevice(navigator),
+      })
     } catch (error) {
       this.fail(String(error), loaded)
     }
@@ -112,17 +137,22 @@ class LocalCompletion {
   ): Promise<string> {
     if (this.state.phase !== "ready" || !this.worker) return Promise.resolve("")
     const id = ++this.id
+    const device = this.state.loaded!.device
     this.update({ ...this.state, phase: "generating", detail: "Suggesting…" })
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.fail(
-          "Completion timed out. Reload or try the smaller model.",
-          this.state.loaded
-        )
-      }, 90000)
+      const timer = setTimeout(
+        () => {
+          this.fail(
+            "Completion timed out. Reload or try the smaller model.",
+            this.state.loaded
+          )
+        },
+        device === "wasm" ? 30000 : 90000
+      )
       this.requests.set(id, { resolve, timer })
       this.worker!.postMessage({
         type: "complete",
+        device,
         id,
         prefix: prefix.slice(-6000),
         suffix: suffix.slice(0, 1500),
