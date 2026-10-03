@@ -6,6 +6,7 @@ import TSWorker from "monaco-editor/language/typescript/ts.worker.js?worker"
 import { localCompletion } from "../ai"
 import { passAPI, type PassNode } from "../passes"
 import { play } from "cuelume"
+import { registerPassIntelliSense } from "../editor-intellisense"
 
 self.MonacoEnvironment = {
   getWorker: (_id, label) =>
@@ -98,6 +99,12 @@ export function PassEditor({
     )
   }, [error, node.id, node.data.label, node.data.code])
   useEffect(() => {
+    return registerPassIntelliSense(
+      () => editorRef.current?.getModel(),
+      () => current.current.node
+    )
+  }, [])
+  useEffect(() => {
     const disposables = ["glsl", "javascript"].map((language) =>
       monaco.languages.registerInlineCompletionsProvider(language, {
         provideInlineCompletions: async (model, position, context, token) => {
@@ -180,18 +187,25 @@ export function PassEditor({
     <Editor
       path={`${node.id}.${node.data.kind === "glsl" ? "glsl" : "js"}`}
       language={node.data.kind === "glsl" ? "glsl" : "javascript"}
-      theme="vs"
+      theme="nodeart"
       value={node.data.code}
       onChange={(value) => onChange(value ?? "")}
       onMount={mount}
       options={{
         automaticLayout: true,
         editContext: false,
+        useShadowDOM: true,
         minimap: { enabled: false },
         fontSize: 14,
         tabSize: 2,
         scrollBeyondLastLine: false,
         inlineSuggest: { enabled: true },
+        colorDecorators: true,
+        quickSuggestions: { other: true, comments: false, strings: false },
+        suggest: {
+          showInlineDetails: true,
+          snippetsPreventQuickSuggestions: false,
+        },
         padding: { top: 16 },
         fixedOverflowWidgets: true,
       }}

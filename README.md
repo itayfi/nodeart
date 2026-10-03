@@ -51,16 +51,16 @@ p5.js uses instance mode:
 
 ```js
 function setup(p) {
-  p.noStroke();
+  p.noStroke()
 }
 
 function draw(p, inputs, time, frame) {
-  p.clear();
+  p.clear()
   if (inputs.source) {
-    p.image(inputs.source, 0, 0, p.width, p.height);
+    p.image(inputs.source, 0, 0, p.width, p.height)
   }
-  p.fill(255, 180, 90);
-  p.circle(p.width / 2, p.height / 2, 80);
+  p.fill(255, 180, 90)
+  p.circle(p.width / 2, p.height / 2, 80)
 }
 ```
 
@@ -77,6 +77,19 @@ Inputs are limited to eight per pass and the GPU's available texture units. Grap
 The renderer executes passes in dependency order. Each pass has its own render targets, and branches can sample the same output independently. Every Previous frame node exposes an immutable previous-frame snapshot throughout the current frame. It captures its source only after all current-frame passes finish. Chains of delay nodes therefore add one frame each. The initial history is transparent black.
 
 GLSL-to-GLSL transfer stays on the GPU. GLSL/image-to-p5 transfer reads pixels back to a p5.Image, so mixed graphs can be slower, especially at high resolution. p5 outputs upload back to a GPU texture.
+
+## Editor suggestions and colors
+
+IntelliSense works without an AI model. Press Ctrl+Space for suggestions. p5.js
+uses its TypeScript declarations for method completion, hover documentation, and
+parameter help. `setup`/`draw` callback parameters are typed automatically, including
+named inputs as nullable `p5.Image` values. Saved code remains JavaScript.
+
+GLSL suggestions include WebGL 1 built-in functions, type keywords, and the current
+pass's generated uniforms and texture inputs. This is a built-in catalog, not a full
+GLSL language server. Click a swatch beside a literal `vec3` or `vec4` with components
+in 0–1 to edit its color. Expressions and HDR values are left alone; literal vectors
+may also represent positions or other data, so use the picker where appropriate.
 
 ## Browser-local AI completion
 

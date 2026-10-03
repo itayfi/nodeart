@@ -427,13 +427,16 @@ code {
   height: 100%;
   cursor: col-resize;
 }
-.pass-workspace [data-slot="resizable-handle"][aria-orientation="vertical"]::before {
+.pass-workspace
+  [data-slot="resizable-handle"][aria-orientation="vertical"]::before {
   inset: 16px auto 16px 7px;
   width: 1px;
   height: auto;
   box-shadow: 1px 0 #ffffffb0;
 }
-.pass-workspace [data-slot="resizable-handle"][aria-orientation="vertical"] > div {
+.pass-workspace
+  [data-slot="resizable-handle"][aria-orientation="vertical"]
+  > div {
   width: 4px;
   height: 32px;
 }
@@ -857,19 +860,55 @@ code {
 .status-bar {
   min-height: 36px;
 }
+/* Monaco mounts overflow widgets outside the editor panel. Give those surfaces
+   explicit colors as well as theme tokens, including the context-view menu. */
+.shadow-root-host,
+.context-view.monaco-menu-container {
+  --vscode-menu-background: #c5d9e6;
+  --vscode-menu-foreground: #16364a;
+  --vscode-menu-selectionBackground: #339ee0;
+  --vscode-menu-selectionForeground: #111;
+  --vscode-menu-separatorBackground: #627f94;
+  --vscode-menu-border: #46657d;
+  --vscode-cornerRadius-large: 8px;
+  --vscode-strokeThickness: 1px;
+  --vscode-widget-shadow: #173d5930;
+}
+.context-view.monaco-menu-container .monaco-menu .monaco-action-bar.vertical,
+.monaco-editor .suggest-widget,
+.monaco-editor .monaco-hover,
+.monaco-editor .parameter-hints-widget,
+.monaco-editor .colorpicker-widget {
+  color: var(--ink);
+  background: var(--panel-surface);
+  border: 1px solid var(--surface-rim);
+  box-shadow:
+    var(--surface-shadow),
+    0 8px 24px #173d5930;
+}
+.monaco-menu .monaco-action-bar .action-item.focused {
+  background: var(--primary-gel-gradient);
+  color: #111;
+  box-shadow: inset 0 1px #ffffffb0;
+}
 .image-asset-preview,
 .palette-preview,
 .project-placeholder {
-  box-shadow: inset 0 1px 3px #16364a33, 0 1px #ffffff80;
+  box-shadow:
+    inset 0 1px 3px #16364a33,
+    0 1px #ffffff80;
 }
 .image-asset-preview {
-  background: repeating-conic-gradient(#edf1f4 0% 25%, #fff 0% 50%) 0 / 16px 16px;
+  background: repeating-conic-gradient(#edf1f4 0% 25%, #fff 0% 50%) 0 / 16px
+    16px;
 }
 [data-slot="input"].color-picker {
   padding: 3px;
   cursor: pointer;
 }
-[data-slot="input"].color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+[data-slot="input"].color-picker::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
 [data-slot="input"].color-picker::-webkit-color-swatch {
   border-radius: 4px;
   border: 0;
