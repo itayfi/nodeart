@@ -4,6 +4,11 @@ import {
   type AIModel,
   type AIDevice,
 } from "./ai-config.ts"
+import {
+  diagnosticSession,
+  heapMetrics,
+  pageDiagnostics,
+} from "./ai-diagnostics.ts"
 export type { AIModel, AIDevice } from "./ai-config.ts"
 export type AIState = {
   phase: "off" | "loading" | "ready" | "generating" | "error"
@@ -39,6 +44,7 @@ function initialState(): AIState {
 export class LocalCompletion {
   private gpuInfo: unknown
   private worker?: Worker
+  private loadingHeartbeat?: ReturnType<typeof setInterval>
   private requests = new Map<number, Request>()
   private id = 0
   private state: AIState = initialState()
@@ -51,7 +57,13 @@ export class LocalCompletion {
     }
   }
   private update(state: AIState) {
+    const samePhase = this.state.phase === state.phase
     this.state = state
+    pageDiagnostics.record(
+      "state",
+      { ...state, heap: heapMetrics() },
+      samePhase && (state.phase === "loading" || state.phase === "generating")
+    )
     try {
       localStorage.setItem(
         diagnosticKey,
@@ -118,6 +130,7 @@ export class LocalCompletion {
         const message = event.data
         if (message.type === "gpu-info") {
           this.gpuInfo = message.gpu
+          pageDiagnostics.record("gpu-info", message.gpu)
           this.update({ ...this.state })
         }
         if (message.type === "stage") {
@@ -147,6 +160,8 @@ export class LocalCompletion {
           })
         }
         if (message.type === "ready") {
+          clearInterval(this.loadingHeartbeat)
+          this.loadingHeartbeat = undefined
           try {
             localStorage.setItem(aiModelConfig(model, device).cacheKey, "true")
           } catch {
@@ -194,10 +209,19 @@ export class LocalCompletion {
       // recognize iPads that send a desktop Macintosh user agent.
       worker.postMessage({
         type: "load",
+        diagnosticSession,
         model,
         device,
         mobile: isMobileDevice(navigator),
       })
+      if (import.meta.env?.DEV) {
+        this.loadingHeartbeat = setInterval(() => {
+          pageDiagnostics.record("loading-heartbeat", {
+            state: this.state,
+            heap: heapMetrics(),
+          })
+        }, 2000)
+      }
     } catch (error) {
       this.fail(String(error), loaded)
     }
@@ -207,6 +231,8 @@ export class LocalCompletion {
     this.update({ phase: "error", detail, loaded })
   }
   stop() {
+    clearInterval(this.loadingHeartbeat)
+    this.loadingHeartbeat = undefined
     this.worker?.terminate()
     this.worker = undefined
     this.requests.forEach((r) => {
