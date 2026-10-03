@@ -1,5 +1,11 @@
 import { PassRenderer } from "../src/pass-renderer"
 import {
+  creativeExamples,
+  creativeProject,
+  passPresets,
+  presetPass,
+} from "../src/pass-presets"
+import {
   makePass,
   port,
   connect,
@@ -278,6 +284,44 @@ await check(
       caught.includes("Broken shader") && caught.includes("ERROR"),
       "Expected named compilation error"
     )
+  }
+)
+await check(
+  "all reusable passes compile and render with disconnected inputs",
+  async () => {
+    for (const preset of passPresets) {
+      const { r } = await renderer(project([presetPass(preset.id)]), 64)
+      try {
+        r.render(0)
+        r.render(0.2)
+      } finally {
+        r.dispose()
+      }
+    }
+  }
+)
+await check(
+  "creative multipass examples render non-empty evolving output",
+  async () => {
+    for (const example of creativeExamples) {
+      const { r, canvas } = await renderer(creativeProject(example.id), 128)
+      try {
+        r.render(0)
+        const first = pixels(canvas).slice()
+        for (let i = 1; i <= 12; i++) r.render(i * 0.2)
+        const last = pixels(canvas)
+        assert(
+          last.some((v, i) => i % 4 !== 3 && v > 30),
+          `${example.label} is empty`
+        )
+        assert(
+          last.some((v, i) => i % 4 !== 3 && Math.abs(v - first[i]) > 5),
+          `${example.label} did not evolve`
+        )
+      } finally {
+        r.dispose()
+      }
+    }
   }
 )
 document.body.dataset.result = results.some((r) => r.startsWith("FAIL"))
