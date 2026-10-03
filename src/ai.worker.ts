@@ -1,9 +1,13 @@
 import {
   env,
   pipeline,
+  TextStreamer,
   type TextGenerationPipeline,
 } from "@huggingface/transformers"
 import { cleanCompletion } from "./completion-text"
+import { aiModelConfig } from "./ai-config"
+import { primeModelCache } from "./ai-model-cache"
+import { completionPrompt } from "./completion-prompt"
 
 // Configure ONNX before creating any session. Inference already runs in this
 // app's worker, so an additional WASM proxy worker is unnecessary.
@@ -17,12 +21,14 @@ if (env.backends.onnx.webgpu) {
 }
 
 let generator: TextGenerationPipeline | undefined
+let gpuDevice: GPUDevice | undefined
 let busy = false
 self.onmessage = async (event: MessageEvent) => {
   const message = event.data as {
     type: string
     model: "0.5B" | "1.5B"
     device: "wasm" | "webgpu"
+    mobile: boolean
     id: number
     prefix: string
     suffix: string
@@ -31,45 +37,113 @@ self.onmessage = async (event: MessageEvent) => {
   }
   try {
     if (message.type === "load") {
+      const config = aiModelConfig(message.model, message.device)
+      if (message.device === "webgpu") {
+        const adapter = await navigator.gpu?.requestAdapter({
+          powerPreference: "high-performance",
+        })
+        if (!adapter) throw new Error("WebGPU is unavailable. Choose WASM.")
+        if (!adapter.features.has("shader-f16")) {
+          throw new Error("This GPU does not support float16. Choose WASM.")
+        }
+        // The large embedding tensor needs more than WebGPU's default device
+        // limits. Request the adapter's supported limits, without allocating
+        // buffers here. Supplying this device also preserves GPU selection.
+        gpuDevice = await adapter.requestDevice({
+          requiredFeatures: [
+            "shader-f16",
+            ...(adapter.features.has("subgroups")
+              ? ["subgroups" as const]
+              : []),
+          ],
+          requiredLimits: {
+            maxBufferSize: adapter.limits.maxBufferSize,
+            maxStorageBufferBindingSize:
+              adapter.limits.maxStorageBufferBindingSize,
+            maxComputeWorkgroupStorageSize:
+              adapter.limits.maxComputeWorkgroupStorageSize,
+            maxComputeInvocationsPerWorkgroup:
+              adapter.limits.maxComputeInvocationsPerWorkgroup,
+            maxComputeWorkgroupSizeX: adapter.limits.maxComputeWorkgroupSizeX,
+            maxComputeWorkgroupSizeY: adapter.limits.maxComputeWorkgroupSizeY,
+            maxComputeWorkgroupSizeZ: adapter.limits.maxComputeWorkgroupSizeZ,
+          },
+        })
+        gpuDevice.lost.then((info) => {
+          if (info.reason !== "destroyed")
+            self.postMessage({
+              type: "error",
+              error: `GPU device lost: ${info.message || "browser memory or driver failure"}`,
+            })
+        })
+      }
       env.allowLocalModels = false
-      env.useBrowserCache = true
+      env.useBrowserCache = typeof caches !== "undefined"
       if (typeof caches !== "undefined") {
         env.useCustomCache = true
-        env.customCache = await caches.open("nodeart-ai")
+        const cache = await caches.open("nodeart-ai")
+        env.customCache = cache
+        await primeModelCache(
+          cache,
+          config.url,
+          config.bytes,
+          (loaded, total) =>
+            self.postMessage({
+              type: "progress",
+              progress: {
+                status: "progress",
+                file: config.file,
+                loaded,
+                total,
+                progress: (loaded / total) * 100,
+              },
+            })
+        )
       }
-      generator = await pipeline(
-        "text-generation",
-        message.model === "0.5B"
-          ? "onnx-community/Qwen2.5-Coder-0.5B-ONNX"
-          : "onnx-community/Qwen2.5-Coder-1.5B",
-        {
-          device: message.device,
-          // q4 uses float32 activations; q4f16 would use float16 instead.
-          dtype: "q4",
-          session_options: {
-            freeDimensionOverrides: { batch_size: 1 },
-            // Keep sequence_length and KV-cache dimensions dynamic: overrides
-            // fix input shapes, rather than setting initial buffer capacities.
-            // preferredOutputChannelType is not an ONNX Runtime session option.
-          },
-          progress_callback: (progress) =>
-            self.postMessage({ type: "progress", progress }),
-        }
-      )
+      self.postMessage({ type: "stage", detail: "Preparing model session…" })
+      generator = await pipeline("text-generation", config.repo, {
+        device: message.device,
+        // q4f16 reduces GPU floating-point tensors; q8 is smaller for WASM in
+        // these repositories because it also quantizes the large embeddings.
+        dtype: config.dtype,
+        session_options: {
+          executionProviders:
+            message.device === "webgpu"
+              ? [
+                  {
+                    name: "webgpu",
+                    device: gpuDevice,
+                    ...(message.mobile
+                      ? {
+                          storageBufferCacheMode: "disabled",
+                        }
+                      : {}),
+                  },
+                ]
+              : ["wasm"],
+          freeDimensionOverrides: { batch_size: 1 },
+          // Keep sequence_length and KV-cache dimensions dynamic: overrides
+          // fix input shapes, rather than setting initial buffer capacities.
+          // preferredOutputChannelType is not an ONNX Runtime session option.
+        },
+        progress_callback: (progress) =>
+          self.postMessage({ type: "progress", progress }),
+      })
       self.postMessage({ type: "ready" })
     }
     if (message.type === "complete" && generator && !busy) {
       busy = true
       // Qwen's fill-in-the-middle tokens describe the insertion precisely.
       // Chat prompting often causes small models to rewrite the whole shader.
-      const api =
-        message.language === "GLSL"
-          ? message.api
-          : message.api
-              .split("\n")
-              .map((line) => `// ${line}`)
-              .join("\n")
-      const prompt = `<|fim_prefix|>// ${message.language}\n${api}\n${message.prefix}<|fim_suffix|>${message.suffix}<|fim_middle|>`
+      const cpu = message.device === "wasm"
+      const prompt = completionPrompt(
+        generator.tokenizer,
+        message.prefix,
+        message.suffix,
+        message.api,
+        message.language,
+        cpu
+      )
       const stops = [
         "<|endoftext|>",
         "<|im_end|>",
@@ -78,11 +152,26 @@ self.onmessage = async (event: MessageEvent) => {
       ].flatMap((token) =>
         generator!.tokenizer.encode(token, { add_special_tokens: false })
       )
+      let tokens = 0
+      const started = performance.now()
       const result = await generator(prompt, {
-        max_new_tokens: 64,
+        max_new_tokens: cpu ? 24 : 64,
         do_sample: false,
         return_full_text: false,
         eos_token_id: stops,
+        streamer: new TextStreamer(generator.tokenizer, {
+          skip_prompt: true,
+          token_callback_function: () => {
+            tokens += 1
+            self.postMessage({
+              type: "generation-progress",
+              id: message.id,
+              tokens,
+              seconds: Math.round((performance.now() - started) / 1000),
+            })
+          },
+          callback_function: () => {},
+        }),
       })
       const output = result as unknown as {
         generated_text: string | { role: string; content: string }[]
@@ -97,6 +186,10 @@ self.onmessage = async (event: MessageEvent) => {
     }
   } catch (error) {
     busy = false
+    if (message.type === "load") {
+      gpuDevice?.destroy()
+      gpuDevice = undefined
+    }
     self.postMessage({
       type: "error",
       id: message.id,

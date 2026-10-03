@@ -21,6 +21,7 @@ import {
   type AIModel,
   type AIDevice,
 } from "../ai"
+import { aiModelConfig } from "../ai-config"
 function preference(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -60,17 +61,27 @@ export function AISettings({
   useEffect(() => {
     const gpuAPI = (
       navigator as Navigator & {
-        gpu?: { requestAdapter: () => Promise<unknown> }
+        gpu?: {
+          requestAdapter: (options: {
+            powerPreference: "high-performance"
+          }) => Promise<{
+            features: { has: (feature: string) => boolean }
+          } | null>
+        }
       }
     ).gpu
     let active = true
-    void (gpuAPI?.requestAdapter() ?? Promise.resolve(null))
+    void (
+      gpuAPI?.requestAdapter({ powerPreference: "high-performance" }) ??
+      Promise.resolve(null)
+    )
       .then((adapter) => {
         if (active) {
-          setGpu(adapter ? "available" : "unavailable")
-          if (adapter && !preference("nodeart-ai-device", ""))
+          const available = adapter?.features.has("shader-f16") ?? false
+          setGpu(available ? "available" : "unavailable")
+          if (available && !preference("nodeart-ai-device", ""))
             setDevice("webgpu")
-          if (!adapter) setDevice("wasm")
+          if (!available) setDevice("wasm")
         }
       })
       .catch(() => {
@@ -81,9 +92,9 @@ export function AISettings({
     }
   }, [])
   let cached = false
+  const config = aiModelConfig(model, device)
   try {
-    cached =
-      localStorage.getItem(`nodeart-ai-cached-base-${model}-q4`) === "true"
+    cached = localStorage.getItem(config.cacheKey) === "true"
   } catch {
     /* Optional cache hint. */
   }
@@ -165,21 +176,27 @@ export function AISettings({
           </label>
           <p className="text-sm">
             {gpu === "available"
-              ? "WebGPU available. WASM may be slower; WebGPU shares your GPU with the artwork."
+              ? "WebGPU available. Large models can still exceed mobile browser memory. WebGPU shares your GPU with the artwork."
               : gpu === "checking"
                 ? "Checking WebGPU…"
-                : "WebGPU unavailable in this browser. Use WASM."}
+                : "WebGPU with float16 is unavailable in this browser. Use WASM."}
           </p>
           <p className="text-sm">
-            4-bit weights (q4) ·{" "}
-            {model === "1.5B"
-              ? "approximately 1.79 GB"
-              : "approximately 0.78 GB"}
-            , plus supporting files.{" "}
+            {config.dtype === "q8"
+              ? "8-bit weights (q8)"
+              : "4-bit weights + float16 (q4f16)"}{" "}
+            · approximately {(config.bytes / 1e9).toFixed(2)} GB, plus
+            supporting files.{" "}
             {cached
               ? "Previously loaded; cached files will be reused if still available."
               : "Not yet loaded."}
           </p>
+          {device === "wasm" && (
+            <p className="text-sm">
+              CPU suggestions use a shorter context and up to 24 new tokens,
+              with a 30-second limit.
+            </p>
+          )}
           <p className="text-sm break-words" role="status">
             {state.detail}
           </p>
@@ -234,6 +251,8 @@ export function AISettings({
                 await caches.delete("nodeart-ai")
                 for (const m of ["0.5B", "1.5B"]) {
                   localStorage.removeItem(`nodeart-ai-cached-base-${m}-q4`)
+                  localStorage.removeItem(`nodeart-ai-cached-base-${m}-q4f16`)
+                  localStorage.removeItem(`nodeart-ai-cached-base-${m}-q8`)
                   // Clear hints from the previous Instruct models too.
                   localStorage.removeItem(`nodeart-ai-cached-${m}-q4`)
                 }
