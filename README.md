@@ -16,7 +16,17 @@ pnpm test
 
 Code is on the left; preview and graph are on the right. Select a node to edit it. All three dividers support dragging and keyboard resizing, and their layouts are remembered. Narrow screens stack the workspace vertically with page scrolling.
 
-Add GLSL, p5.js, Previous frame, or Image input nodes from Project options. The same menu contains feedback, two-texture blending, and mixed p5.js/GLSL examples, JSON import, and JSON download.
+Add GLSL, p5.js, Previous frame, or Image input nodes from **Add node** in the Nodes header. Its Generators, Texture effects, and Compositing submenus contain 11 reusable code presets. These create ordinary editable nodes with named inputs; connect them to your own graph.
+
+Project options contains examples, JSON import/download, and **Download code ZIP**. ZIP export includes the current draft (even unapplied edits), exact pass source, fragment shaders with generated uniforms, image assets, and a complete `project.json` for reimporting. A manifest records connections, input names, output selection, and Previous frame nodes. It is a source archive, not a standalone web app.
+
+### Multi-pass examples
+
+- **Photon loom:** p5 orbit ribbons feed spiral feedback through Previous frame; a horizontal/vertical blur branch supplies glow for screen compositing.
+- **Prismatic tide:** domain-warped noise drives both cosine color mapping and displacement, reunited in an eight-sector kaleidoscope and finished with a chromatic lens.
+- **Make waves · risograph:** a p5 kinetic typography poster becomes CMY halftone dots, with slight print misregistration and lens color separation.
+
+The original introductory examples remain available. Opening an example creates a separate local project and preserves the current one.
 
 **Run** compiles the complete draft and resets its time and history. A failed compilation keeps the previous valid graph running. **Reset** restarts that valid graph; **Pause** freezes its time and history. Code edits, graph changes, and node selection do not automatically replace the running graph. Quality controls select 256, 512, or 1024 pixel pass resolution. PNG export captures the displayed output.
 

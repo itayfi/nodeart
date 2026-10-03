@@ -76,6 +76,12 @@ import { SoundToggle } from "./components/sound-toggle"
 import { CategoryIcon, type CategoryIconName } from "./components/category-icon"
 import { PassPreview } from "./components/pass-preview"
 import { AISettings } from "./components/ai-settings"
+import {
+  creativeExamples,
+  creativeProject,
+  passPresets,
+  presetPass,
+} from "./pass-presets"
 import { localCompletion, type AIState } from "./ai"
 import {
   MAX_INPUTS,
@@ -364,12 +370,12 @@ function Workspace() {
     setLibraryOpen(false)
     if (execute) run(p)
   }
-  function add(kind: PassKind) {
+  function add(kind: PassKind, presetId?: string) {
     if (project.nodes.length >= 64) {
       setNotice("A project supports up to 64 nodes.")
       return
     }
-    const n = makePass(kind)
+    const n = presetId ? presetPass(presetId) : makePass(kind)
     n.position = {
       x: 60 + (project.nodes.length % 3) * 250,
       y: 60 + Math.floor(project.nodes.length / 3) * 190,
@@ -647,23 +653,19 @@ function Workspace() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Add node</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {(Object.keys(labels) as PassKind[]).map((kind) => (
-                    <DropdownMenuItem
-                      key={kind}
-                      data-cuelume-tap="select"
-                      onClick={() => add(kind)}
-                    >
-                      <CategoryIcon name={category[kind]} />
-                      {labels[kind]}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSub>
                 <DropdownMenuSubTrigger>Examples</DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
+                  {creativeExamples.map((example) => (
+                    <DropdownMenuItem
+                      key={example.id}
+                      className="flex max-w-80 flex-col items-start gap-1 py-2 whitespace-normal"
+                      data-cuelume-tap="select"
+                      onClick={() => activate(creativeProject(example.id))}
+                    >
+                      <span>{example.label}</span>
+                      <span className="text-xs">{example.description}</span>
+                    </DropdownMenuItem>
+                  ))}
                   {(["feedback", "blend", "mixed"] as const).map((kind) => (
                     <DropdownMenuItem
                       key={kind}
@@ -679,6 +681,30 @@ function Workspace() {
                   ))}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
+              <DropdownMenuItem
+                data-cuelume-tap="tap"
+                onClick={async () => {
+                  try {
+                    const { projectCodeZip, safeFilename } =
+                      await import("./code-export")
+                    const zip = projectCodeZip(project)
+                    download(
+                      `${safeFilename(project.name)}-code.zip`,
+                      new Blob([new Uint8Array(zip).buffer], {
+                        type: "application/zip",
+                      })
+                    )
+                    play("success", { emphasis: "subtle" })
+                  } catch (error) {
+                    setNotice(
+                      `Code export failed: ${error instanceof Error ? error.message : String(error)}`
+                    )
+                  }
+                }}
+              >
+                <Download />
+                Download code ZIP
+              </DropdownMenuItem>
               <DropdownMenuItem
                 data-cuelume-tap="tap"
                 onClick={() => {
@@ -1220,7 +1246,64 @@ function Workspace() {
               />
               <ResizablePanel id="graph" defaultSize="48%" minSize="22%">
                 <section className="library-panel flex h-full min-h-0 flex-col rounded-xl p-3">
-                  <h2 className="mb-3 shrink-0">Nodes</h2>
+                  <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+                    <h2>Nodes</h2>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            data-cuelume-tap="open"
+                          />
+                        }
+                      >
+                        <Plus /> Add node
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="max-h-[75dvh] overflow-y-auto"
+                      >
+                        {(Object.keys(labels) as PassKind[]).map((kind) => (
+                          <DropdownMenuItem
+                            key={kind}
+                            data-cuelume-tap="select"
+                            onClick={() => add(kind)}
+                          >
+                            <CategoryIcon name={category[kind]} />
+                            {labels[kind]}
+                          </DropdownMenuItem>
+                        ))}
+                        {["Generators", "Texture effects", "Compositing"].map(
+                          (group) => (
+                            <DropdownMenuSub key={group}>
+                              <DropdownMenuSubTrigger>
+                                {group}
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="max-h-[75dvh] overflow-y-auto">
+                                {passPresets
+                                  .filter((p) => p.group === group)
+                                  .map((preset) => (
+                                    <DropdownMenuItem
+                                      key={preset.id}
+                                      data-cuelume-tap="select"
+                                      onClick={() =>
+                                        add(preset.kind, preset.id)
+                                      }
+                                    >
+                                      <CategoryIcon
+                                        name={category[preset.kind]}
+                                      />
+                                      {preset.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                          )
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                   <div className="graph-workspace min-h-0 flex-1">
                     <ReactFlow
                       key={project.id}
@@ -1443,9 +1526,9 @@ function Workspace() {
             Write code, connect textures, and build feedback loops.
           </DialogDescription>
           <p>
-            Select a node to edit it. Add nodes from Project options. Add named
-            texture inputs below the code, then drag an output socket to an
-            input socket.
+            Select a node to edit it. Add nodes and reusable passes from the
+            Nodes header. Add named texture inputs below the code, then drag an
+            output socket to an input socket.
           </p>
           <p>
             GLSL uniforms are generated in Pass API. p5.js uses setup(p) and
