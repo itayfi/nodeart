@@ -130,7 +130,12 @@ self.onmessage = async (event: MessageEvent) => {
                     device: gpuDevice,
                     ...(message.mobile
                       ? {
-                          storageBufferCacheMode: "disabled",
+                          // Deferred GPU dispatches still need intermediate
+                          // buffers until the run finishes. Immediate release
+                          // can leave WebKit binding a destroyed placeholder.
+                          // Release at the run boundary without retaining a
+                          // reusable mobile buffer cache.
+                          storageBufferCacheMode: "lazyRelease",
                         }
                       : {}),
                   },
