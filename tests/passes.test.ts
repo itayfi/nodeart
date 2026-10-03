@@ -34,12 +34,10 @@ test("stable input IDs preserve connections through rename and reorder", () => {
   const p = starterProject(),
     b = p.nodes[1],
     before = p.edges.filter((e) => e.target === b.id).map((e) => e.targetHandle)
-  b.data.inputs = b.data.inputs
-    .reverse()
-    .map((input) => ({
-      ...input,
-      name: input.name === "source" ? "image" : input.name,
-    }))
+  b.data.inputs = b.data.inputs.reverse().map((input) => ({
+    ...input,
+    name: input.name === "source" ? "image" : input.name,
+  }))
   passOrder(p.nodes, p.edges)
   assert.deepEqual(
     p.edges.filter((e) => e.target === b.id).map((e) => e.targetHandle),

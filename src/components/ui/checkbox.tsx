@@ -3,7 +3,11 @@ import { cn } from "cn"
 import { CheckIcon } from "lucide-react"
 import { play } from "cuelume"
 
-function Checkbox({ className, onCheckedChange, ...props }: CheckboxPrimitive.Root.Props) {
+function Checkbox({
+  className,
+  onCheckedChange,
+  ...props
+}: CheckboxPrimitive.Root.Props) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
@@ -14,15 +18,18 @@ function Checkbox({ className, onCheckedChange, ...props }: CheckboxPrimitive.Ro
       {...props}
       onCheckedChange={(checked, details) => {
         onCheckedChange?.(checked, details)
-        if (!details.isCanceled) play("toggle", { emphasis: "subtle", direction: checked ? "forward" : "back" })
+        if (!details.isCanceled)
+          play("toggle", {
+            emphasis: "subtle",
+            direction: checked ? "forward" : "back",
+          })
       }}
     >
       <CheckboxPrimitive.Indicator
         data-slot="checkbox-indicator"
         className="grid place-content-center text-current transition-none [&>svg]:size-3.5"
       >
-        <CheckIcon
-        />
+        <CheckIcon />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   )

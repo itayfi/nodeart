@@ -33,14 +33,22 @@ function Slider({
       onValueChange={(next, details) => {
         onValueChange?.(next, details)
         if (details.isCanceled) return
-        const before = Array.isArray(previous.current) ? previous.current : [previous.current]
+        const before = Array.isArray(previous.current)
+          ? previous.current
+          : [previous.current]
         const after = Array.isArray(next) ? next : [next]
         const changedIndex = after.findIndex((v, index) => v !== before[index])
         previous.current = next
         const now = performance.now()
         if (changedIndex >= 0 && now - lastCue.current >= 100) {
           lastCue.current = now
-          play("select", { emphasis: "subtle", direction: after[changedIndex] > (before[changedIndex] ?? min) ? "forward" : "back" })
+          play("select", {
+            emphasis: "subtle",
+            direction:
+              after[changedIndex] > (before[changedIndex] ?? min)
+                ? "forward"
+                : "back",
+          })
         }
       }}
     >
@@ -59,7 +67,7 @@ function Slider({
             data-slot="slider-thumb"
             key={index}
             index={index}
-            aria-label={`${props['aria-label'] ?? 'Value'}${_values.length > 1 ? ` ${index + 1}` : ''}`}
+            aria-label={`${props["aria-label"] ?? "Value"}${_values.length > 1 ? ` ${index + 1}` : ""}`}
             className="relative block size-3 shrink-0 rounded-full border border-ring bg-white ring-ring/50 transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
           />
         ))}
