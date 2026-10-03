@@ -39,7 +39,9 @@ self.onmessage = async (event: MessageEvent) => {
       }
       generator = await pipeline(
         "text-generation",
-        `onnx-community/Qwen2.5-Coder-${message.model}-Instruct`,
+        message.model === "0.5B"
+          ? "onnx-community/Qwen2.5-Coder-0.5B-ONNX"
+          : "onnx-community/Qwen2.5-Coder-1.5B",
         {
           device: message.device,
           // q4 uses float32 activations; q4f16 would use float16 instead.

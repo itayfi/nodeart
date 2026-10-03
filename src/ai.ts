@@ -55,7 +55,7 @@ class LocalCompletion {
         }
         if (message.type === "ready") {
           try {
-            localStorage.setItem(`nodeart-ai-cached-${model}-q4`, "true")
+            localStorage.setItem(`nodeart-ai-cached-base-${model}-q4`, "true")
           } catch {
             /* Cache hint is optional. */
           }

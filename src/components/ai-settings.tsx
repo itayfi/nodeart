@@ -82,7 +82,8 @@ export function AISettings({
   }, [])
   let cached = false
   try {
-    cached = localStorage.getItem(`nodeart-ai-cached-${model}-q4`) === "true"
+    cached =
+      localStorage.getItem(`nodeart-ai-cached-base-${model}-q4`) === "true"
   } catch {
     /* Optional cache hint. */
   }
@@ -105,7 +106,7 @@ export function AISettings({
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogTitle>AI completion</DialogTitle>
           <DialogDescription>
-            Qwen 2.5 Coder runs locally. Model files download only when you
+            Qwen 2.5 Coder base runs locally. Model files download only when you
             press the button below. Your code stays on this device.
           </DialogDescription>
           <label className="grid gap-2">
@@ -172,8 +173,8 @@ export function AISettings({
           <p className="text-sm">
             4-bit weights (q4) ·{" "}
             {model === "1.5B"
-              ? "approximately 1.92 GB"
-              : "approximately 0.86 GB"}
+              ? "approximately 1.79 GB"
+              : "approximately 0.78 GB"}
             , plus supporting files.{" "}
             {cached
               ? "Previously loaded; cached files will be reused if still available."
@@ -231,8 +232,11 @@ export function AISettings({
               localCompletion.stop()
               try {
                 await caches.delete("nodeart-ai")
-                for (const m of ["0.5B", "1.5B"])
+                for (const m of ["0.5B", "1.5B"]) {
+                  localStorage.removeItem(`nodeart-ai-cached-base-${m}-q4`)
+                  // Clear hints from the previous Instruct models too.
                   localStorage.removeItem(`nodeart-ai-cached-${m}-q4`)
+                }
                 setCacheRevision((v) => v + 1)
                 setCacheError("Cached models removed.")
               } catch {
