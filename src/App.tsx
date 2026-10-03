@@ -41,6 +41,8 @@ import {
   Undo2,
   Redo2,
   CircleHelp,
+  Maximize,
+  Minimize,
 } from "lucide-react"
 import { play } from "cuelume"
 import { Button } from "./components/ui/button"
@@ -76,6 +78,9 @@ import { SoundToggle } from "./components/sound-toggle"
 import { CategoryIcon, type CategoryIconName } from "./components/category-icon"
 import { PassPreview } from "./components/pass-preview"
 import { AISettings } from "./components/ai-settings"
+import { VideoExport } from "./components/video-export"
+import { SnippetLibrary } from "./components/snippet-library"
+import { insertGLSLSnippet } from "./glsl-snippets"
 import {
   creativeExamples,
   creativeProject,
@@ -211,12 +216,38 @@ function Workspace() {
   const [project, setProject] = useState<PassProject>(starterProject)
   const [request, setRequest] = useState(() => ({ project, revision: 0 }))
   const [runningProject, setRunningProject] = useState(project)
+  const [hasRendered, setHasRendered] = useState(false)
   const [selectedId, setSelectedId] = useState(project.output)
   const [projects, setProjects] = useState<PassProject[]>([])
   const [initialized, setInitialized] = useState(false)
   const [storage, setStorage] = useState("Loading projects…")
   const [notice, setNotice] = useState("")
   const [status, setStatus] = useState("Compiling…")
+  const [recording, setRecording] = useState(false)
+  const recordingRef = useRef(false)
+  const previewFrameRef = useRef<HTMLDivElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  const onRecording = useCallback((value: boolean) => {
+    recordingRef.current = value
+    setRecording(value)
+  }, [])
+  useEffect(() => {
+    const changed = () =>
+      setFullscreen(document.fullscreenElement === previewFrameRef.current)
+    document.addEventListener("fullscreenchange", changed)
+    return () => document.removeEventListener("fullscreenchange", changed)
+  }, [])
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement === previewFrameRef.current)
+        await document.exitFullscreen()
+      else await previewFrameRef.current?.requestFullscreen()
+    } catch (error) {
+      setNotice(
+        `Fullscreen unavailable: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
   const [playing, setPlaying] = useState(true),
     [time, setTime] = useState(0),
     [resolution, setResolution] = useState(512)
@@ -254,10 +285,10 @@ function Workspace() {
   const dirty = signature(project) !== signature(runningProject)
   const onStatus = useCallback((value: string) => setStatus(value), [])
   const onTime = useCallback((value: number) => setTime(value), [])
-  const onApplied = useCallback(
-    (value: PassProject) => setRunningProject(value),
-    []
-  )
+  const onApplied = useCallback((value: PassProject) => {
+    setRunningProject(value)
+    setHasRendered(true)
+  }, [])
   const onRuntimeError = useCallback(() => setPlaying(false), [])
   const onEditor = useCallback((value: editor.IStandaloneCodeEditor) => {
     editorRef.current = value
@@ -342,11 +373,19 @@ function Workspace() {
     )
   }
   function run(p = project) {
+    if (recordingRef.current) {
+      setNotice("Finish recording before running another graph.")
+      return
+    }
     setRequest({ project: p, revision: request.revision + 1 })
     setPlaying(true)
     setNotice("")
   }
   function activate(p: PassProject, execute = true) {
+    if (recordingRef.current) {
+      setNotice("Finish recording before switching projects.")
+      return
+    }
     clearTimeout(lastCode.current)
     lastCode.current = undefined
     // Preserve edits even when the autosave debounce has not elapsed yet.
@@ -638,6 +677,14 @@ function Workspace() {
             <Download />
             Export PNG
           </Button>
+          <VideoExport
+            canvasRef={canvasRef}
+            name={runningProject.name}
+            playing={playing}
+            ready={initialized && hasRendered && status !== "Compiling…"}
+            onPlaying={setPlaying}
+            onRecording={onRecording}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -813,6 +860,31 @@ function Workspace() {
                   automatic={automatic}
                   onAutomatic={setAutomatic}
                 />
+                <SnippetLibrary
+                  disabled={selected?.data.kind !== "glsl"}
+                  onInsert={(id) => {
+                    if (selected?.data.kind !== "glsl")
+                      throw new Error("Select a GLSL pass first.")
+                    const result = insertGLSLSnippet(selected.data.code, id)
+                    if (!result.added.length) {
+                      setNotice(
+                        "These snippet functions are already in this pass."
+                      )
+                      return
+                    }
+                    const model = editorRef.current?.getModel()
+                    if (model?.getValue() === selected.data.code) {
+                      editorRef.current!.pushUndoStop()
+                      editorRef.current!.executeEdits("nodeart.snippet", [
+                        { range: model.getFullModelRange(), text: result.code },
+                      ])
+                      editorRef.current!.pushUndoStop()
+                    } else patchNode({ code: result.code }, true)
+                    setNotice(
+                      `Inserted ${result.added.join(", ")}. Call the helpers in main(), then Run.`
+                    )
+                  }}
+                />
                 <Button
                   variant="secondary"
                   size="sm"
@@ -834,7 +906,7 @@ function Workspace() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={!initialized}
+                  disabled={!initialized || recording}
                   data-cuelume-tap="tap"
                   onClick={() => run()}
                 >
@@ -1170,12 +1242,25 @@ function Workspace() {
             >
               <ResizablePanel id="preview" defaultSize="52%" minSize="22%">
                 <section className="preview-panel flex h-full min-h-0 flex-col rounded-xl p-4">
-                  <h2 className="mb-3 shrink-0">Preview</h2>
+                  <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+                    <h2>Preview</h2>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      aria-label="Enter fullscreen preview"
+                      data-cuelume-tap="open"
+                      disabled={!document.fullscreenEnabled}
+                      onClick={() => void toggleFullscreen()}
+                    >
+                      <Maximize />
+                    </Button>
+                  </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2 pb-3">
                     <Button
                       variant="secondary"
                       size="icon-sm"
                       aria-label={playing ? "Pause preview" : "Play preview"}
+                      disabled={recording}
                       data-cuelume-tap="toggle"
                       onClick={() => setPlaying((v) => !v)}
                     >
@@ -1185,6 +1270,7 @@ function Workspace() {
                       variant="secondary"
                       size="icon-sm"
                       aria-label="Reset preview"
+                      disabled={recording}
                       data-cuelume-tap="tap"
                       onClick={() => run(runningProject)}
                     >
@@ -1195,6 +1281,7 @@ function Workspace() {
                     </span>
                     <Select
                       value={String(resolution)}
+                      disabled={recording}
                       onValueChange={(v) => v && setResolution(Number(v))}
                     >
                       <SelectTrigger aria-label="Preview quality">
@@ -1225,7 +1312,22 @@ function Workspace() {
                     </Select>
                   </div>
                   <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
-                    <div className="preview-frame aspect-square max-h-full max-w-full overflow-hidden rounded-lg">
+                    <div
+                      ref={previewFrameRef}
+                      className="preview-frame relative aspect-square max-h-full max-w-full overflow-hidden rounded-lg"
+                    >
+                      {fullscreen && (
+                        <div className="absolute top-4 right-4 z-10">
+                          <Button
+                            variant="secondary"
+                            data-cuelume-tap="close"
+                            onClick={() => void toggleFullscreen()}
+                          >
+                            <Minimize />
+                            Exit fullscreen
+                          </Button>
+                        </div>
+                      )}
                       <PassPreview
                         request={request}
                         playing={playing}

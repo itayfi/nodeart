@@ -969,3 +969,21 @@ code {
     flex: none;
   }
 }
+.preview-frame:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  background: #edf1f4;
+}
+.preview-frame:fullscreen canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
