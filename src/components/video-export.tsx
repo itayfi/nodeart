@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react"
-import { Video, Square, Download } from "lucide-react"
+import { Square, Download } from "lucide-react"
 import { play } from "cuelume"
 import { Button } from "./ui/button"
 import {
@@ -25,6 +25,8 @@ export function VideoExport({
   ready,
   onPlaying,
   onRecording,
+  open,
+  onOpenChange,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>
   name: string
@@ -32,9 +34,10 @@ export function VideoExport({
   ready: boolean
   onPlaying: (playing: boolean) => void
   onRecording: (recording: boolean) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false),
-    [seconds, setSeconds] = useState(10),
+  const [seconds, setSeconds] = useState(10),
     [fps, setFps] = useState(30)
   const [mime, setMime] = useState(() => supportedVideoFormats()[0]?.mime ?? "")
   const [recording, setRecording] = useState(false),
@@ -97,24 +100,11 @@ export function VideoExport({
   }
   return (
     <>
-      <Button
-        variant="secondary"
-        data-cuelume-tap="open"
-        disabled={
-          !ready ||
-          formats.length === 0 ||
-          !HTMLCanvasElement.prototype.captureStream
-        }
-        onClick={() => setOpen(true)}
-      >
-        <Video />
-        Export video
-      </Button>
       <Dialog
         open={open}
         onOpenChange={(value) => {
           if (!value) session.current?.cancel()
-          setOpen(value)
+          onOpenChange(value)
         }}
       >
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">

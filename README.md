@@ -117,6 +117,8 @@ Completion context includes the selected pass's API and a bounded prefix/suffix 
 
 ## Local projects and compatibility
 
+The Projects window includes Import JSON and visual tiles with the last successfully rendered artwork. Thumbnails are captured locally after Run and when opening Projects, and persist independently from project code and JSON exports. Projects without a captured preview show a placeholder until run; browsing the library does not execute their code. Export video is available in the Project options ellipsis menu.
+
 Pass projects use version 2 JSON and a separate `nodeart-passes` IndexedDB database. Changes autosave after a short pause; Save flushes immediately. Project switching preserves pending edits. JSON imports create new project IDs and wait for an explicit Run before executing code.
 
 Earlier node graphs and their original IndexedDB/localStorage data remain untouched. This release does not automatically translate the old parameter-node graphs into editable passes; use the previous version to open those graphs. Legacy parser/renderer modules and tests remain available for compatibility reference.

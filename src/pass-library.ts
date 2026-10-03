@@ -32,6 +32,45 @@ export async function savePassProject(project: PassProject) {
   })
 }
 let startup: ReturnType<typeof readLibrary> | undefined
+// Preview metadata is separate from executable projects and portable JSON.
+export async function savePassPreview(id: string, thumbnail: string) {
+  const db = await open()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("settings", "readwrite")
+    tx.objectStore("settings").put(thumbnail, `preview:${id}`)
+    tx.oncomplete = () => resolve()
+    tx.onabort = tx.onerror = () => reject(tx.error)
+  })
+}
+export async function readPassPreviews(): Promise<Record<string, string>> {
+  try {
+    const db = await open()
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("settings", "readonly"),
+        store = tx.objectStore("settings")
+      const keys = store.getAllKeys(),
+        values = store.getAll()
+      tx.oncomplete = () =>
+        resolve(
+          Object.fromEntries(
+            keys.result.flatMap((key, i) => {
+              const value = values.result[i]
+              return typeof key === "string" &&
+                key.startsWith("preview:") &&
+                typeof value === "string" &&
+                value.startsWith("data:image/jpeg;base64,") &&
+                value.length < 250_000
+                ? [[key.slice(8), value]]
+                : []
+            })
+          )
+        )
+      tx.onabort = tx.onerror = () => reject(tx.error)
+    })
+  } catch {
+    return {}
+  }
+}
 export function readPassLibrary() {
   return (startup ??= readLibrary())
 }

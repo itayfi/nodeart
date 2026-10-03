@@ -43,6 +43,8 @@ import {
   CircleHelp,
   Maximize,
   Minimize,
+  Video,
+  Upload,
 } from "lucide-react"
 import { play } from "cuelume"
 import { Button } from "./components/ui/button"
@@ -81,6 +83,7 @@ import { AISettings } from "./components/ai-settings"
 import { VideoExport } from "./components/video-export"
 import { SnippetLibrary } from "./components/snippet-library"
 import { insertGLSLSnippet } from "./glsl-snippets"
+import { supportedVideoFormats } from "./video-export"
 import {
   creativeExamples,
   creativeProject,
@@ -105,7 +108,12 @@ import {
   type PassProject,
   type TexturePort,
 } from "./passes"
-import { readPassLibrary, savePassProject } from "./pass-library"
+import {
+  readPassLibrary,
+  savePassProject,
+  readPassPreviews,
+  savePassPreview,
+} from "./pass-library"
 
 const category: Record<PassKind, CategoryIconName> = {
   glsl: "GLSL",
@@ -270,6 +278,8 @@ function Workspace() {
   const [maxInputs, setMaxInputs] = useState(MAX_INPUTS)
   const [undoCount, setUndoCount] = useState(0)
   const [redoCount, setRedoCount] = useState(0)
+  const [videoOpen, setVideoOpen] = useState(false)
+  const [previews, setPreviews] = useState<Record<string, string>>({})
   const canvasRef = useRef<HTMLCanvasElement>(null),
     editorRef = useRef<editor.IStandaloneCodeEditor | null>(null),
     jsonRef = useRef<HTMLInputElement>(null),
@@ -294,6 +304,33 @@ function Workspace() {
     editorRef.current = value
   }, [])
   useEffect(() => localCompletion.subscribe(setAI), [])
+  useEffect(() => {
+    let alive = true
+    void readPassPreviews().then((value) => {
+      if (alive) setPreviews(value)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!hasRendered) return
+    const timeout = setTimeout(() => {
+      const visible = canvasRef.current
+      if (!visible?.width) return
+      try {
+        const thumbnail = document.createElement("canvas")
+        thumbnail.width = thumbnail.height = 200
+        thumbnail.getContext("2d")!.drawImage(visible, 0, 0, 200, 200)
+        const image = thumbnail.toDataURL("image/jpeg", 0.7)
+        setPreviews((previous) => ({ ...previous, [runningProject.id]: image }))
+        void savePassPreview(runningProject.id, image).catch(() => {})
+      } catch {
+        /* A missing thumbnail must not interrupt artwork or saving. */
+      }
+    }, 1500)
+    return () => clearTimeout(timeout)
+  }, [runningProject, hasRendered, libraryOpen])
   useEffect(() => {
     let alive = true
     void readPassLibrary().then((library) => {
@@ -677,14 +714,6 @@ function Workspace() {
             <Download />
             Export PNG
           </Button>
-          <VideoExport
-            canvasRef={canvasRef}
-            name={runningProject.name}
-            playing={playing}
-            ready={initialized && hasRendered && status !== "Compiling…"}
-            onPlaying={setPlaying}
-            onRecording={onRecording}
-          />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -699,6 +728,20 @@ function Workspace() {
               <MoreHorizontal />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                data-cuelume-tap="open"
+                disabled={
+                  !initialized ||
+                  !hasRendered ||
+                  status === "Compiling…" ||
+                  supportedVideoFormats().length === 0 ||
+                  !HTMLCanvasElement.prototype.captureStream
+                }
+                onClick={() => setVideoOpen(true)}
+              >
+                <Video />
+                Export video
+              </DropdownMenuItem>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>Examples</DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
@@ -1578,15 +1621,26 @@ function Workspace() {
           </Button>
         </DialogContent>
       </Dialog>
+      <VideoExport
+        open={videoOpen}
+        onOpenChange={setVideoOpen}
+        canvasRef={canvasRef}
+        name={runningProject.name}
+        playing={playing}
+        ready={initialized && hasRendered && status !== "Compiling…"}
+        onPlaying={setPlaying}
+        onRecording={onRecording}
+      />
       <Dialog open={libraryOpen} onOpenChange={setLibraryOpen}>
-        <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-lg">
+        <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-3xl">
           <DialogTitle>Projects</DialogTitle>
           <DialogDescription>
             Pass projects are saved locally. Earlier Nodeart graphs remain in
             their original storage.
           </DialogDescription>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Input
+              className="min-w-36 flex-1"
               aria-label="Search projects"
               placeholder="Search projects"
               value={search}
@@ -1600,24 +1654,56 @@ function Workspace() {
               <Plus />
               New
             </Button>
+            <Button
+              variant="secondary"
+              data-cuelume-tap="open"
+              onClick={() => jsonRef.current?.click()}
+            >
+              <Upload />
+              Import JSON
+            </Button>
           </div>
-          <div className="library-scroll min-h-0 overflow-auto rounded-lg p-2">
+          <div className="library-scroll grid min-h-0 auto-rows-max grid-cols-1 gap-3 overflow-auto rounded-lg p-3 sm:grid-cols-2 md:grid-cols-3">
             {projects
               .filter((p) =>
                 p.name.toLowerCase().includes(search.toLowerCase())
               )
               .map((p) => (
                 <button
-                  className="library-item flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left"
+                  className="library-item flex w-full flex-col items-start gap-2 self-start rounded-lg p-3 text-left"
                   key={p.id}
+                  aria-label={`Open ${p.name}`}
                   data-cuelume-tap="select"
                   onClick={() => activate(p)}
                 >
-                  <Workflow className="size-4" />
-                  <span className="mr-auto">{p.name}</span>
-                  <span className="text-xs">{p.nodes.length} nodes</span>
+                  {previews[p.id] ? (
+                    <img
+                      src={previews[p.id]}
+                      alt={`Last rendered preview of ${p.name}`}
+                      className="aspect-square w-full rounded-md object-cover"
+                    />
+                  ) : (
+                    <div className="project-placeholder flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-md">
+                      <FolderOpen className="size-8" />
+                      <span className="text-xs">Run to create a preview</span>
+                    </div>
+                  )}
+                  <span className="w-full truncate text-sm font-semibold">
+                    {p.name}
+                  </span>
+                  <span className="text-xs">
+                    {p.id === project.id ? "Current · " : ""}
+                    {p.nodes.length} nodes
+                  </span>
                 </button>
               ))}
+            {!projects.some((p) =>
+              p.name.toLowerCase().includes(search.toLowerCase())
+            ) && (
+              <p className="col-span-full py-6 text-center text-sm">
+                No projects match your search.
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>
