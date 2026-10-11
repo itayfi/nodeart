@@ -39,7 +39,8 @@ function preference(key: string, fallback: string) {
 }
 function remember(key: string, value: string) {
   try {
-    localStorage.setItem(key, value)
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
   } catch {
     /* Optional preference. */
   }
@@ -95,7 +96,9 @@ export function AISettings({
   const [device, setDevice] = useState<AIDevice>(() =>
     preference("nodeart-ai-device", "wasm") === "webgpu" ? "webgpu" : "wasm"
   )
-  const [apiKey, setApiKey] = useState("")
+  const [apiKey, setApiKey] = useState(() =>
+    preference("nodeart-ai-mistral-key", "")
+  )
   const [gpu, setGpu] = useState(false)
   const [cacheRevision, setCacheRevision] = useState(0)
   const [cacheStatus, setCacheStatus] = useState("")
@@ -192,8 +195,8 @@ export function AISettings({
                 <div className="flex items-center gap-2">
                   <label htmlFor="mistral-api-key">API key</label>
                   <Help label="About the Mistral API key">
-                    Kept in memory until you reload. Create a key in Mistral
-                    Studio.
+                    Saved in this browser. Clear the field to remove it. Create
+                    a key in Mistral Studio.
                   </Help>
                 </div>
                 <Input
@@ -204,7 +207,11 @@ export function AISettings({
                   spellCheck={false}
                   autoCapitalize="none"
                   placeholder="Mistral API key"
-                  onChange={(event) => setApiKey(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setApiKey(value)
+                    remember("nodeart-ai-mistral-key", value.trim())
+                  }}
                 />
               </div>
               <Button
