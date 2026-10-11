@@ -144,11 +144,6 @@ export function AISettings({
               ? " · on"
               : ""}
       </Button>
-      {state.phase === "error" && (
-        <span className="max-w-64 text-xs break-words" role="alert">
-          {state.detail}
-        </span>
-      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-sm">
           <DialogTitle>AI completion</DialogTitle>
@@ -376,11 +371,6 @@ export function AISettings({
           )}
           {state.phase === "loading" && (
             <p className="text-sm break-words" role="status">
-              {state.detail}
-            </p>
-          )}
-          {state.phase === "error" && (
-            <p className="text-sm break-words" role="alert">
               {state.detail}
             </p>
           )}

@@ -48,6 +48,7 @@ import {
 } from "lucide-react"
 import { play } from "cuelume"
 import { Button } from "./components/ui/button"
+import { toast } from "./components/ui/toast"
 import { Input } from "./components/ui/input"
 import {
   Dialog,
@@ -303,7 +304,25 @@ function Workspace() {
   const onEditor = useCallback((value: editor.IStandaloneCodeEditor) => {
     editorRef.current = value
   }, [])
-  useEffect(() => localCompletion.subscribe(setAI), [])
+  const lastAIError = useRef<AIState | null>(null)
+  useEffect(
+    () =>
+      localCompletion.subscribe((state) => {
+        setAI(state)
+        if (state.phase === "error" && state !== lastAIError.current) {
+          toast.add({
+            title: "AI completion failed",
+            description: state.detail,
+            type: "error",
+            priority: "high",
+            timeout: 10000,
+          })
+          play("error", { emphasis: "subtle" })
+        }
+        lastAIError.current = state.phase === "error" ? state : null
+      }),
+    []
+  )
   useEffect(() => {
     let alive = true
     void readPassPreviews().then((value) => {
