@@ -9,11 +9,14 @@ import {
   heapMetrics,
   pageDiagnostics,
 } from "./ai-diagnostics.ts"
+import { mistralCompletion } from "./mistral-completion.ts"
 export type { AIModel, AIDevice } from "./ai-config.ts"
 export type AIState = {
   phase: "off" | "loading" | "ready" | "generating" | "error"
   detail: string
-  loaded?: { model: AIModel; device: AIDevice }
+  loaded?:
+    | { model: AIModel; device: AIDevice }
+    | { model: "codestral-latest"; device: "mistral" }
 }
 type Request = {
   resolve: (value: string) => void
@@ -42,6 +45,8 @@ function initialState(): AIState {
   return { phase: "off", detail: "No model loaded" }
 }
 export class LocalCompletion {
+  private apiKey = ""
+  private remoteRequest?: AbortController
   private gpuInfo: unknown
   private worker?: Worker
   private loadingHeartbeat?: ReturnType<typeof setInterval>
@@ -230,7 +235,23 @@ export class LocalCompletion {
     this.stop()
     this.update({ phase: "error", detail, loaded })
   }
+  enableMistral(key: string) {
+    this.stop()
+    if (!key.trim()) {
+      this.update({ phase: "error", detail: "Enter your Mistral API key." })
+      return
+    }
+    this.apiKey = key.trim()
+    this.update({
+      phase: "ready",
+      detail: "Codestral enabled · suggestions send code to Mistral",
+      loaded: { model: "codestral-latest", device: "mistral" },
+    })
+  }
   stop() {
+    this.remoteRequest?.abort()
+    this.remoteRequest = undefined
+    this.apiKey = ""
     clearInterval(this.loadingHeartbeat)
     this.loadingHeartbeat = undefined
     this.worker?.terminate()
@@ -249,7 +270,10 @@ export class LocalCompletion {
     api: string,
     language: string
   ): Promise<string> {
-    if (this.state.phase !== "ready" || !this.worker) return Promise.resolve("")
+    if (this.state.phase !== "ready") return Promise.resolve("")
+    if (this.state.loaded?.device === "mistral")
+      return this.completeMistral(prefix, suffix, api, language)
+    if (!this.worker) return Promise.resolve("")
     const id = ++this.id
     const device = this.state.loaded!.device
     this.update({ ...this.state, phase: "generating", detail: "Suggesting…" })
@@ -282,6 +306,59 @@ export class LocalCompletion {
         language,
       })
     })
+  }
+  private async completeMistral(
+    prefix: string,
+    suffix: string,
+    api: string,
+    language: string
+  ) {
+    const loaded = this.state.loaded
+    const controller = new AbortController()
+    this.remoteRequest = controller
+    const started = performance.now()
+    const timer = setTimeout(() => controller.abort(), 30000)
+    this.update({
+      ...this.state,
+      phase: "generating",
+      detail: "Waiting for Codestral…",
+    })
+    try {
+      const text = await mistralCompletion(
+        this.apiKey,
+        prefix,
+        suffix,
+        api,
+        language,
+        controller.signal
+      )
+      if (this.remoteRequest !== controller) return ""
+      this.update({
+        phase: "ready",
+        loaded,
+        detail: text
+          ? `Codestral suggestion finished in ${((performance.now() - started) / 1000).toFixed(1)}s`
+          : "Codestral returned no insertable suggestion.",
+      })
+      return text
+    } catch (error) {
+      if (this.remoteRequest === controller) {
+        // Keep the in-memory key so transient errors can be retried with Apply.
+        this.update({
+          phase: "error",
+          loaded,
+          detail: controller.signal.aborted
+            ? "Mistral completion timed out after 30 seconds."
+            : error instanceof Error
+              ? error.message
+              : "Mistral completion failed.",
+        })
+      }
+      return ""
+    } finally {
+      clearTimeout(timer)
+      if (this.remoteRequest === controller) this.remoteRequest = undefined
+    }
   }
 }
 export const localCompletion = new LocalCompletion()
