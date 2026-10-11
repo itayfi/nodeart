@@ -4,11 +4,6 @@ import {
   type AIModel,
   type AIDevice,
 } from "./ai-config.ts"
-import {
-  diagnosticSession,
-  heapMetrics,
-  pageDiagnostics,
-} from "./ai-diagnostics.ts"
 import { mistralCompletion } from "./mistral-completion.ts"
 export type { AIModel, AIDevice } from "./ai-config.ts"
 export type AIState = {
@@ -26,33 +21,13 @@ type Request = {
   tokens: number
   inputTokens?: number
 }
-const diagnosticKey = "nodeart-ai-last-status"
-function initialState(): AIState {
-  try {
-    const last = JSON.parse(localStorage.getItem(diagnosticKey) ?? "null")
-    if (last?.phase === "loading" || last?.phase === "generating") {
-      return {
-        phase: "error",
-        detail: `Previous AI session was interrupted by a reload, closed tab, or browser crash. Last status: ${String(last.detail)}`,
-      }
-    }
-    if (last?.phase === "error" && typeof last.detail === "string") {
-      return { phase: "error", detail: last.detail }
-    }
-  } catch {
-    /* Diagnostic storage is optional. */
-  }
-  return { phase: "off", detail: "No model loaded" }
-}
 export class LocalCompletion {
   private apiKey = ""
   private remoteRequest?: AbortController
-  private gpuInfo: unknown
   private worker?: Worker
-  private loadingHeartbeat?: ReturnType<typeof setInterval>
   private requests = new Map<number, Request>()
   private id = 0
-  private state: AIState = initialState()
+  private state: AIState = { phase: "off", detail: "No model loaded" }
   private listeners = new Set<(state: AIState) => void>()
   subscribe(listener: (state: AIState) => void) {
     this.listeners.add(listener)
@@ -62,44 +37,8 @@ export class LocalCompletion {
     }
   }
   private update(state: AIState) {
-    const samePhase = this.state.phase === state.phase
     this.state = state
-    pageDiagnostics.record(
-      "state",
-      { ...state, heap: heapMetrics() },
-      samePhase && (state.phase === "loading" || state.phase === "generating")
-    )
-    try {
-      localStorage.setItem(
-        diagnosticKey,
-        JSON.stringify({
-          ...state,
-          gpu: this.gpuInfo,
-          updatedAt: new Date().toISOString(),
-        })
-      )
-    } catch {
-      /* Diagnostic storage is optional. */
-    }
     this.listeners.forEach((l) => l(state))
-  }
-  diagnosticReport() {
-    let lastStatus: unknown
-    try {
-      lastStatus = JSON.parse(localStorage.getItem(diagnosticKey) ?? "null")
-    } catch {
-      /* Optional storage. */
-    }
-    return JSON.stringify(
-      {
-        browser: navigator.userAgent,
-        state: this.state,
-        gpu: this.gpuInfo,
-        lastStatus,
-      },
-      null,
-      2
-    )
   }
   private generationStatus(id: number) {
     const request = this.requests.get(id)
@@ -118,7 +57,6 @@ export class LocalCompletion {
   }
   load(model: AIModel, device: AIDevice) {
     this.stop()
-    this.gpuInfo = undefined
     const loaded = { model, device }
     this.update({
       phase: "loading",
@@ -133,11 +71,7 @@ export class LocalCompletion {
       worker.onmessage = (event) => {
         if (this.worker !== worker) return
         const message = event.data
-        if (message.type === "gpu-info") {
-          this.gpuInfo = message.gpu
-          pageDiagnostics.record("gpu-info", message.gpu)
-          this.update({ ...this.state })
-        }
+
         if (message.type === "stage") {
           this.update({ phase: "loading", detail: message.detail, loaded })
         }
@@ -165,8 +99,6 @@ export class LocalCompletion {
           })
         }
         if (message.type === "ready") {
-          clearInterval(this.loadingHeartbeat)
-          this.loadingHeartbeat = undefined
           try {
             localStorage.setItem(aiModelConfig(model, device).cacheKey, "true")
           } catch {
@@ -214,19 +146,10 @@ export class LocalCompletion {
       // recognize iPads that send a desktop Macintosh user agent.
       worker.postMessage({
         type: "load",
-        diagnosticSession,
         model,
         device,
         mobile: isMobileDevice(navigator),
       })
-      if (import.meta.env?.DEV) {
-        this.loadingHeartbeat = setInterval(() => {
-          pageDiagnostics.record("loading-heartbeat", {
-            state: this.state,
-            heap: heapMetrics(),
-          })
-        }, 2000)
-      }
     } catch (error) {
       this.fail(String(error), loaded)
     }
@@ -252,8 +175,6 @@ export class LocalCompletion {
     this.remoteRequest?.abort()
     this.remoteRequest = undefined
     this.apiKey = ""
-    clearInterval(this.loadingHeartbeat)
-    this.loadingHeartbeat = undefined
     this.worker?.terminate()
     this.worker = undefined
     this.requests.forEach((r) => {

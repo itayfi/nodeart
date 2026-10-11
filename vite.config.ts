@@ -2,11 +2,10 @@ import { resolve } from "node:path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
-import { aiDiagnosticsPlugin } from "./scripts/ai-diagnostics-server.ts"
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(), aiDiagnosticsPlugin()],
+  plugins: [react(), tailwindcss()],
   base: "/nodeart/",
   optimizeDeps: { include: ["@huggingface/transformers", "monaco-editor"] },
   resolve: {

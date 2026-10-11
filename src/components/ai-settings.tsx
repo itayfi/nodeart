@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Sparkles, Download, Square, Clipboard, KeyRound } from "lucide-react"
+import { Sparkles, Download, Square, KeyRound, CircleHelp } from "lucide-react"
 import { Button } from "./ui/button"
 import {
   Dialog,
@@ -17,12 +17,19 @@ import {
 import { Checkbox } from "./ui/checkbox"
 import { Input } from "./ui/input"
 import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "./ui/tooltip"
+import {
   localCompletion,
   type AIState,
   type AIModel,
   type AIDevice,
 } from "../ai"
 import { aiModelConfig } from "../ai-config"
+
 function preference(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -34,8 +41,37 @@ function remember(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
   } catch {
-    /* Preferences are optional. */
+    /* Optional preference. */
   }
+}
+function Help({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger
+        data-slot="button"
+        closeOnClick={false}
+        onClick={() => setOpen(true)}
+        render={
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            className="size-6! min-h-0! p-0!"
+            aria-label={label}
+          />
+        }
+      >
+        <CircleHelp className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64 text-sm">{children}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function AISettings({
@@ -47,82 +83,56 @@ export function AISettings({
   automatic: boolean
   onAutomatic: (enabled: boolean) => void
 }) {
-  const [open, setOpen] = useState(false),
-    [model, setModel] = useState<AIModel>(() =>
-      preference("nodeart-ai-model", "0.5B") === "1.5B" ? "1.5B" : "0.5B"
-    ),
-    [device, setDevice] = useState<AIDevice>(() =>
-      preference("nodeart-ai-device", "wasm") === "webgpu" ? "webgpu" : "wasm"
-    )
-  const [gpu, setGpu] = useState<"checking" | "available" | "unavailable">(
-    "checking"
-  )
-  const [cacheRevision, setCacheRevision] = useState(0),
-    [cacheError, setCacheError] = useState("")
-  const [reportStatus, setReportStatus] = useState("")
+  const [open, setOpen] = useState(false)
   const [provider, setProvider] = useState<"local" | "mistral">(() =>
     preference("nodeart-ai-provider", "local") === "mistral"
       ? "mistral"
       : "local"
   )
+  const [model, setModel] = useState<AIModel>(() =>
+    preference("nodeart-ai-model", "0.5B") === "1.5B" ? "1.5B" : "0.5B"
+  )
+  const [device, setDevice] = useState<AIDevice>(() =>
+    preference("nodeart-ai-device", "wasm") === "webgpu" ? "webgpu" : "wasm"
+  )
   const [apiKey, setApiKey] = useState("")
+  const [gpu, setGpu] = useState(false)
+  const [cacheRevision, setCacheRevision] = useState(0)
+  const [cacheStatus, setCacheStatus] = useState("")
   useEffect(() => {
-    const gpuAPI = (
-      navigator as Navigator & {
-        gpu?: {
-          requestAdapter: (options: {
-            powerPreference: "high-performance"
-          }) => Promise<{
-            features: { has: (feature: string) => boolean }
-          } | null>
-        }
-      }
-    ).gpu
     let active = true
-    void (
-      gpuAPI?.requestAdapter({ powerPreference: "high-performance" }) ??
-      Promise.resolve(null)
-    )
+    void navigator.gpu
+      ?.requestAdapter({ powerPreference: "high-performance" })
       .then((adapter) => {
-        if (active) {
-          const available = adapter?.features.has("shader-f16") ?? false
-          setGpu(available ? "available" : "unavailable")
-          if (available && !preference("nodeart-ai-device", ""))
-            setDevice("webgpu")
-          if (!available) setDevice("wasm")
-        }
+        if (!active) return
+        const available = adapter?.features.has("shader-f16") ?? false
+        setGpu(available)
+        if (available && !preference("nodeart-ai-device", ""))
+          setDevice("webgpu")
+        if (!available) setDevice("wasm")
       })
       .catch(() => {
-        if (active) setGpu("unavailable")
+        if (active) setGpu(false)
       })
     return () => {
       active = false
     }
   }, [])
-  let cached = false
   const config = aiModelConfig(model, device)
-  try {
-    cached = localStorage.getItem(config.cacheKey) === "true"
-  } catch {
-    /* Optional cache hint. */
-  }
+  const cached = preference(config.cacheKey, "false") === "true"
   void cacheRevision
-  const loading = state.phase === "loading",
-    loaded = state.phase === "ready" || state.phase === "generating"
-  const same =
-    provider === "mistral"
-      ? state.loaded?.device === "mistral"
-      : state.loaded?.model === model && state.loaded.device === device
+  const loading = state.phase === "loading"
+  const loaded = state.phase === "ready" || state.phase === "generating"
+  const same = state.loaded?.model === model && state.loaded.device === device
   return (
-    <>
+    <TooltipProvider>
       <Button
         variant="secondary"
         size="sm"
         data-cuelume-tap="open"
         onClick={() => setOpen(true)}
       >
-        <Sparkles />
-        AI completion
+        <Sparkles /> AI completion
         {state.phase === "error"
           ? " · error"
           : state.phase === "generating"
@@ -131,27 +141,25 @@ export function AISettings({
               ? " · on"
               : ""}
       </Button>
-      {state.phase !== "off" && (
-        <span
-          className="max-w-64 text-xs break-words"
-          role={state.phase === "error" ? "alert" : "status"}
-          aria-live={
-            state.phase === "generating" || state.phase === "loading"
-              ? "off"
-              : undefined
-          }
-        >
+      {state.phase === "error" && (
+        <span className="max-w-64 text-xs break-words" role="alert">
           {state.detail}
         </span>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-sm">
           <DialogTitle>AI completion</DialogTitle>
-          <DialogDescription>
-            Complete code locally or use your own Mistral key for Codestral.
+          <DialogDescription className="sr-only">
+            Choose a provider and enable code suggestions.
           </DialogDescription>
-          <label className="grid gap-2">
-            Provider
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              Provider{" "}
+              <Help label="About AI providers">
+                Local keeps code on your device. Mistral sends code around your
+                cursor to Codestral using your API credits.
+              </Help>
+            </div>
             <Select
               value={provider}
               onValueChange={(value) => {
@@ -177,54 +185,59 @@ export function AISettings({
                 </SelectItem>
               </SelectContent>
             </Select>
-          </label>
+          </div>
           {provider === "mistral" ? (
             <>
-              <label className="grid gap-2">
-                Mistral API key
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="mistral-api-key">API key</label>
+                  <Help label="About the Mistral API key">
+                    Kept in memory until you reload. Create a key in Mistral
+                    Studio.
+                  </Help>
+                </div>
                 <Input
+                  id="mistral-api-key"
                   type="password"
                   value={apiKey}
                   autoComplete="off"
                   spellCheck={false}
                   autoCapitalize="none"
-                  placeholder="Paste your Mistral API key"
+                  placeholder="Mistral API key"
                   onChange={(event) => setApiKey(event.target.value)}
                 />
-              </label>
-              <p className="text-sm">
-                Codestral fills the gap using code before and after your cursor.
-                Suggestions send that code and Nodeart API hints directly to
-                Mistral and use your account’s API credits.
-              </p>
-              <p className="text-sm">
-                Your key is kept in memory for this page only. Reloading clears
-                it. Get a key from{" "}
-                <a
-                  className="underline"
-                  href="https://console.mistral.ai/api-keys/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Mistral Studio
-                </a>
-                .
-              </p>
+              </div>
+              <Button
+                variant="secondary"
+                data-cuelume-tap="tap"
+                onClick={() =>
+                  window.open(
+                    "https://console.mistral.ai/api-keys/",
+                    "_blank",
+                    "noopener,noreferrer"
+                  )
+                }
+              >
+                <KeyRound /> Get API key
+              </Button>
             </>
           ) : (
             <>
-              <p className="text-sm">
-                Qwen 2.5 Coder base runs on this device. Your code stays local.
-                Model files download only when enabled.
-              </p>
-              <label className="grid gap-2">
-                Model
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  Model{" "}
+                  <Help label="About local models">
+                    1.5B uses more memory and can give better suggestions. This
+                    selection downloads about {(config.bytes / 1e9).toFixed(2)}{" "}
+                    GB when first enabled.
+                  </Help>
+                </div>
                 <Select
                   value={model}
-                  onValueChange={(v) => {
-                    if (v) {
-                      setModel(v as AIModel)
-                      remember("nodeart-ai-model", v)
+                  onValueChange={(value) => {
+                    if (value) {
+                      setModel(value as AIModel)
+                      remember("nodeart-ai-model", value)
                     }
                   }}
                 >
@@ -240,15 +253,21 @@ export function AISettings({
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              </label>
-              <label className="grid gap-2">
-                Run on
+              </div>
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2">
+                  Run on{" "}
+                  <Help label="About GPU and CPU">
+                    GPU is faster but can exceed mobile memory. CPU is slower.
+                    GPU requires float16 support.
+                  </Help>
+                </div>
                 <Select
                   value={device}
-                  onValueChange={(v) => {
-                    if (v) {
-                      setDevice(v as AIDevice)
-                      remember("nodeart-ai-device", v)
+                  onValueChange={(value) => {
+                    if (value) {
+                      setDevice(value as AIDevice)
+                      remember("nodeart-ai-device", value)
                     }
                   }}
                 >
@@ -260,7 +279,7 @@ export function AISettings({
                   <SelectContent>
                     <SelectItem
                       value="webgpu"
-                      disabled={gpu !== "available"}
+                      disabled={!gpu}
                       data-cuelume-tap="select"
                     >
                       WebGPU · GPU
@@ -270,70 +289,23 @@ export function AISettings({
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              </label>
-              <p className="text-sm">
-                {gpu === "available"
-                  ? "WebGPU available. Large models can still exceed mobile browser memory. WebGPU shares your GPU with the artwork."
-                  : gpu === "checking"
-                    ? "Checking WebGPU…"
-                    : "WebGPU with float16 is unavailable in this browser. Use WASM."}
-              </p>
-              <p className="text-sm">
-                {config.dtype === "q8"
-                  ? "8-bit weights (q8)"
-                  : "4-bit weights + float16 (q4f16)"}{" "}
-                · approximately {(config.bytes / 1e9).toFixed(2)} GB, plus
-                supporting files.{" "}
-                {cached
-                  ? "Previously loaded; cached files will be reused if still available."
-                  : "Not yet loaded."}
-              </p>
-              {device === "wasm" && (
-                <p className="text-sm">
-                  CPU suggestions use a shorter context and up to 24 new tokens,
-                  with a 30-second limit.
-                </p>
-              )}
+              </div>
             </>
           )}
-          <p className="text-sm break-words" role="status">
-            {state.detail}
-          </p>
-          <Button
-            variant="secondary"
-            data-cuelume-tap="tap"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(
-                  localCompletion.diagnosticReport()
-                )
-                setReportStatus("Diagnostic report copied.")
-              } catch {
-                setReportStatus("Unable to copy the report in this browser.")
-              }
-            }}
-          >
-            <Clipboard /> Copy diagnostic report
-          </Button>
-          {reportStatus && (
-            <p className="text-sm" role="status">
-              {reportStatus}
-            </p>
-          )}
-          {loaded && state.loaded && (
-            <p className="text-sm">
-              {state.loaded.device === "mistral" ? (
-                "Enabled: Mistral · Codestral"
-              ) : (
-                <>
-                  Loaded: Qwen {state.loaded.model} ·{" "}
-                  {state.loaded.device === "webgpu"
-                    ? "WebGPU (GPU)"
-                    : "WASM (CPU)"}
-                </>
-              )}
-            </p>
-          )}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={automatic}
+                data-cuelume-tap="toggle"
+                onCheckedChange={(value) => onAutomatic(value === true)}
+              />{" "}
+              Automatic suggestions
+            </label>
+            <Help label="About automatic suggestions">
+              Suggest after a typing pause. Mistral requests use API credits.
+              Alt+Enter suggests manually; Tab accepts and Escape dismisses.
+            </Help>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               disabled={
@@ -370,22 +342,6 @@ export function AISettings({
               </Button>
             )}
           </div>
-          <label className="flex items-center gap-2">
-            <Checkbox
-              checked={automatic}
-              data-cuelume-tap="toggle"
-              onCheckedChange={(value) => onAutomatic(value === true)}
-            />
-            Automatic suggestions after a typing pause
-            {provider === "mistral" || state.loaded?.device === "mistral"
-              ? " (uses API credits)"
-              : ""}
-          </label>
-          <p className="text-sm">
-            Use Suggest or Alt+Enter for a completion. Tab accepts; Escape
-            dismisses. Changing settings takes effect when you enable or apply
-            them.
-          </p>
           {provider === "local" && (
             <Button
               variant="secondary"
@@ -394,26 +350,40 @@ export function AISettings({
                 localCompletion.stop()
                 try {
                   await caches.delete("nodeart-ai")
-                  for (const m of ["0.5B", "1.5B"]) {
-                    localStorage.removeItem(`nodeart-ai-cached-base-${m}-q4`)
-                    localStorage.removeItem(`nodeart-ai-cached-base-${m}-q4f16`)
-                    localStorage.removeItem(`nodeart-ai-cached-base-${m}-q8`)
-                    // Clear hints from the previous Instruct models too.
-                    localStorage.removeItem(`nodeart-ai-cached-${m}-q4`)
-                  }
-                  setCacheRevision((v) => v + 1)
-                  setCacheError("Cached models removed.")
+                  for (const size of ["0.5B", "1.5B"])
+                    for (const format of ["q4", "q4f16", "q8"])
+                      localStorage.removeItem(
+                        `nodeart-ai-cached-base-${size}-${format}`
+                      )
+                  for (const size of ["0.5B", "1.5B"])
+                    localStorage.removeItem(`nodeart-ai-cached-${size}-q4`)
+                  setCacheRevision((value) => value + 1)
+                  setCacheStatus("Cached models removed.")
                 } catch {
-                  setCacheError("Unable to remove cache in this browser.")
+                  setCacheStatus("Unable to remove cached models.")
                 }
               }}
             >
               Remove cached models
             </Button>
           )}
-          {cacheError && <p role="status">{cacheError}</p>}
+          {state.phase === "loading" && (
+            <p className="text-sm break-words" role="status">
+              {state.detail}
+            </p>
+          )}
+          {state.phase === "error" && (
+            <p className="text-sm break-words" role="alert">
+              {state.detail}
+            </p>
+          )}
+          {provider === "local" && cacheStatus && (
+            <p className="text-sm" role="status">
+              {cacheStatus}
+            </p>
+          )}
         </DialogContent>
       </Dialog>
-    </>
+    </TooltipProvider>
   )
 }

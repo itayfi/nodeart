@@ -63,7 +63,7 @@ function loadedClient() {
   return { client, worker, state: () => state! }
 }
 
-test("Mistral sends native FIM context directly and keeps keys and code out of stored diagnostics", async (t) => {
+test("Mistral sends native FIM context directly without persisting keys or code", async (t) => {
   const { client, worker, state } = loadedClient()
   t.after(() => client.stop())
   let calls = 0
@@ -213,29 +213,4 @@ test("late errors from a replaced worker do not stop the new model", (t) => {
   worker.emit({ type: "error", error: "old worker failed" })
   assert.equal(state().phase, "ready")
   assert.equal(current.terminated, false)
-})
-
-test("interrupted runs survive reload with GPU diagnostics and no source code in the report", (t) => {
-  const { client, worker } = loadedClient()
-  t.after(() => client.stop())
-  worker.emit({
-    type: "gpu-info",
-    gpu: { limits: { maxBufferSize: 268435456 } },
-  })
-  void client.complete(
-    "PRIVATE_SOURCE",
-    "PRIVATE_SUFFIX",
-    "PRIVATE_API",
-    "GLSL"
-  )
-  const reloaded = new LocalCompletion()
-  let state: AIState
-  reloaded.subscribe((next) => {
-    state = next
-  })
-  assert.equal(state!.phase, "error")
-  assert.match(state!.detail, /interrupted.*Waiting for first token/)
-  const report = reloaded.diagnosticReport()
-  assert.ok(report.includes("268435456"))
-  assert.ok(!report.includes("PRIVATE_"))
 })

@@ -8,7 +8,6 @@ import { cleanCompletion } from "./completion-text"
 import { aiModelConfig } from "./ai-config"
 import { primeModelCache } from "./ai-model-cache"
 import { completionPrompt } from "./completion-prompt"
-import { diagnosticReporter, heapMetrics } from "./ai-diagnostics"
 
 // Configure ONNX before creating any session. Inference already runs in this
 // app's worker, so an additional WASM proxy worker is unnecessary.
@@ -24,27 +23,12 @@ if (env.backends.onnx.webgpu) {
 let generator: TextGenerationPipeline | undefined
 let gpuDevice: GPUDevice | undefined
 let busy = false
-let diagnostics: ReturnType<typeof diagnosticReporter> | undefined
-function send(message: Record<string, unknown>) {
-  // Completion text and prompts never enter the diagnostic upload.
-  const report =
-    message.type === "completion"
-      ? { type: message.type, id: message.id }
-      : message
-  diagnostics?.record(
-    String(message.type),
-    { ...report, heap: heapMetrics() },
-    message.type === "progress" || message.type === "generation-progress"
-  )
-  self.postMessage(message)
-}
 self.onmessage = async (event: MessageEvent) => {
   const message = event.data as {
     type: string
     model: "0.5B" | "1.5B"
     device: "wasm" | "webgpu"
     mobile: boolean
-    diagnosticSession: string
     id: number
     prefix: string
     suffix: string
@@ -53,42 +37,18 @@ self.onmessage = async (event: MessageEvent) => {
   }
   try {
     if (message.type === "load") {
-      diagnostics = diagnosticReporter("worker", message.diagnosticSession)
-      diagnostics.record("load-start", {
-        model: message.model,
-        device: message.device,
-        mobile: message.mobile,
-        heap: heapMetrics(),
-      })
       const config = aiModelConfig(message.model, message.device)
       if (message.device === "webgpu") {
-        diagnostics.record("adapter-request", {})
         const adapter = await navigator.gpu?.requestAdapter({
           powerPreference: "high-performance",
         })
         if (!adapter) throw new Error("WebGPU is unavailable. Choose WASM.")
-        send({
-          type: "gpu-info",
-          gpu: {
-            features: Array.from(adapter.features),
-            limits: {
-              maxBufferSize: adapter.limits.maxBufferSize,
-              maxStorageBufferBindingSize:
-                adapter.limits.maxStorageBufferBindingSize,
-              maxComputeWorkgroupStorageSize:
-                adapter.limits.maxComputeWorkgroupStorageSize,
-            },
-            vendor: adapter.info?.vendor,
-            architecture: adapter.info?.architecture,
-          },
-        })
         if (!adapter.features.has("shader-f16")) {
           throw new Error("This GPU does not support float16. Choose WASM.")
         }
         // The large embedding tensor needs more than WebGPU's default device
         // limits. Request the adapter's supported limits, without allocating
         // buffers here. Supplying this device also preserves GPU selection.
-        diagnostics.record("device-request", {})
         gpuDevice = await adapter.requestDevice({
           requiredFeatures: [
             "shader-f16",
@@ -109,15 +69,9 @@ self.onmessage = async (event: MessageEvent) => {
             maxComputeWorkgroupSizeZ: adapter.limits.maxComputeWorkgroupSizeZ,
           },
         })
-        diagnostics.record("device-ready", {})
-        gpuDevice.addEventListener("uncapturederror", (event) => {
-          diagnostics?.record("gpu-uncaptured-error", {
-            error: event.error.message,
-          })
-        })
         gpuDevice.lost.then((info) => {
           if (info.reason !== "destroyed")
-            send({
+            self.postMessage({
               type: "error",
               error: `GPU device lost: ${info.message || "browser memory or driver failure"}`,
             })
@@ -126,20 +80,15 @@ self.onmessage = async (event: MessageEvent) => {
       env.allowLocalModels = false
       env.useBrowserCache = typeof caches !== "undefined"
       if (typeof caches !== "undefined") {
-        diagnostics.record("cache-open", {})
         env.useCustomCache = true
         const cache = await caches.open("nodeart-ai")
         env.customCache = cache
-        diagnostics.record("cache-prime-start", {
-          file: config.file,
-          bytes: config.bytes,
-        })
         await primeModelCache(
           cache,
           config.url,
           config.bytes,
           (loaded, total) =>
-            send({
+            self.postMessage({
               type: "progress",
               progress: {
                 status: "progress",
@@ -150,9 +99,8 @@ self.onmessage = async (event: MessageEvent) => {
               },
             })
         )
-        diagnostics.record("cache-prime-finished", { heap: heapMetrics() })
       }
-      send({ type: "stage", detail: "Preparing model session…" })
+      self.postMessage({ type: "stage", detail: "Preparing model session…" })
       generator = await pipeline("text-generation", config.repo, {
         device: message.device,
         // q4f16 reduces GPU floating-point tensors; q8 is smaller for WASM in
@@ -183,9 +131,10 @@ self.onmessage = async (event: MessageEvent) => {
           // fix input shapes, rather than setting initial buffer capacities.
           // preferredOutputChannelType is not an ONNX Runtime session option.
         },
-        progress_callback: (progress) => send({ type: "progress", progress }),
+        progress_callback: (progress) =>
+          self.postMessage({ type: "progress", progress }),
       })
-      send({ type: "ready" })
+      self.postMessage({ type: "ready" })
     }
     if (message.type === "complete" && generator && !busy) {
       busy = true
@@ -210,7 +159,7 @@ self.onmessage = async (event: MessageEvent) => {
       )
       let tokens = 0
       const started = performance.now()
-      send({
+      self.postMessage({
         type: "generation-start",
         id: message.id,
         inputTokens: generator.tokenizer.encode(prompt, {
@@ -226,7 +175,7 @@ self.onmessage = async (event: MessageEvent) => {
           skip_prompt: true,
           token_callback_function: () => {
             tokens += 1
-            send({
+            self.postMessage({
               type: "generation-progress",
               id: message.id,
               tokens,
@@ -244,7 +193,7 @@ self.onmessage = async (event: MessageEvent) => {
         typeof raw === "string" ? raw : (raw?.at(-1)?.content ?? ""),
         message.suffix
       )
-      send({ type: "completion", id: message.id, text })
+      self.postMessage({ type: "completion", id: message.id, text })
       busy = false
     }
   } catch (error) {
@@ -253,7 +202,7 @@ self.onmessage = async (event: MessageEvent) => {
       gpuDevice?.destroy()
       gpuDevice = undefined
     }
-    send({
+    self.postMessage({
       type: "error",
       id: message.id,
       error: error instanceof Error ? error.message : String(error),
