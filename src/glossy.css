@@ -214,6 +214,39 @@ code {
 :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]) {
   border-radius: 999px;
 }
+.gel-group > :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]) {
+  padding-inline: 0.9rem;
+
+  &:is([data-slot] ~ [data-slot]) {
+    padding-left: 0.7rem;
+    border-bottom-left-radius: 0;
+    border-top-left-radius: 0;
+    border-left-color: hsl(from var(--gel-mid) h s 90%);
+
+    &::before,
+    &::after {
+      left: 0;
+      border-bottom-left-radius: 0;
+      border-top-left-radius: 0;
+    }
+  }
+
+  &:has(~ [data-slot]) {
+    padding-right: 0.7rem;
+    border-bottom-right-radius: 0;
+    border-top-right-radius: 0;
+
+    &::before,
+    &::after {
+      right: 0;
+      border-bottom-right-radius: 0;
+      border-top-right-radius: 0;
+    }
+  }
+}
+.gel-group > [aria-haspopup="menu"] {
+  width: auto;
+}
 :is([data-slot="button"], [data-slot="dropdown-menu-trigger"]):hover {
   scale: 1.035;
 }

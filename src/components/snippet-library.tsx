@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { BookOpen, Plus } from "lucide-react"
+import { Plus } from "lucide-react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import {
@@ -13,12 +13,15 @@ import { glslSnippets } from "../glsl-snippets"
 export function SnippetLibrary({
   disabled,
   onInsert,
+  open,
+  onOpenChange,
 }: {
   disabled: boolean
   onInsert: (id: string) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false),
-    [search, setSearch] = useState(""),
+  const [search, setSearch] = useState(""),
     [selected, setSelected] = useState("fbm"),
     [error, setError] = useState("")
   const filtered = glslSnippets.filter((s) =>
@@ -29,20 +32,13 @@ export function SnippetLibrary({
   const snippet = filtered.find((s) => s.id === selected) ?? filtered[0]
   return (
     <>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={disabled}
-        data-cuelume-tap="open"
-        onClick={() => {
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
           setError("")
-          setOpen(true)
+          onOpenChange(value)
         }}
       >
-        <BookOpen />
-        GLSL snippets
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-3xl">
           <DialogTitle>GLSL snippet library</DialogTitle>
           <DialogDescription>
@@ -120,7 +116,7 @@ export function SnippetLibrary({
               if (!snippet) return
               try {
                 onInsert(snippet.id)
-                setOpen(false)
+                onOpenChange(false)
               } catch (e) {
                 setError(e instanceof Error ? e.message : String(e))
               }

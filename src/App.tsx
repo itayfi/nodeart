@@ -34,7 +34,6 @@ import {
   Plus,
   Trash2,
   Copy,
-  Sparkles,
   MoreHorizontal,
   ArrowUp,
   ArrowDown,
@@ -80,9 +79,8 @@ import {
 import { SoundToggle } from "./components/sound-toggle"
 import { CategoryIcon, type CategoryIconName } from "./components/category-icon"
 import { PassPreview } from "./components/pass-preview"
-import { AISettings } from "./components/ai-settings"
+import { EditorActions } from "./components/editor-actions"
 import { VideoExport } from "./components/video-export"
-import { SnippetLibrary } from "./components/snippet-library"
 import { insertGLSLSnippet } from "./glsl-snippets"
 import { supportedVideoFormats } from "./video-export"
 import {
@@ -890,13 +888,27 @@ function Workspace() {
             minSize="25%"
           >
             <section className="pass-panel flex h-full min-h-0 flex-col rounded-xl">
-              <div className="flex shrink-0 flex-wrap items-center gap-2 p-3">
-                <h2 className="mr-auto">
-                  Code{" "}
-                  {dirty && (
-                    <span className="ml-2 text-xs font-normal">· draft</span>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 p-3">
+                <div className="mr-auto inline-flex max-w-full flex-wrap items-center gap-2">
+                  {selected ? (
+                    <>
+                      <CategoryIcon name={category[selected.data.kind]} />
+                      <Input
+                        aria-label="Pass name"
+                        className="w-44"
+                        value={selected.data.label}
+                        data-cuelume-type=""
+                        onChange={(e) => patchNode({ label: e.target.value })}
+                      />
+                      <span className="text-xs">
+                        {labels[selected.data.kind]}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-sm">Select a pass</span>
                   )}
-                </h2>
+                  {dirty && <span className="text-xs">&middot; draft</span>}
+                </div>
                 <Button
                   variant="secondary"
                   size="icon-sm"
@@ -917,13 +929,16 @@ function Workspace() {
                 >
                   <Redo2 />
                 </Button>
-                <AISettings
+                <EditorActions
                   state={ai}
                   automatic={automatic}
                   onAutomatic={setAutomatic}
-                />
-                <SnippetLibrary
-                  disabled={selected?.data.kind !== "glsl"}
+                  snippetsDisabled={selected?.data.kind !== "glsl"}
+                  suggestDisabled={
+                    ai.phase !== "ready" ||
+                    !selected ||
+                    !["glsl", "p5"].includes(selected.data.kind)
+                  }
                   onInsert={(id) => {
                     if (selected?.data.kind !== "glsl")
                       throw new Error("Select a GLSL pass first.")
@@ -946,26 +961,13 @@ function Workspace() {
                       `Inserted ${result.added.join(", ")}. Call the helpers in main(), then Run.`
                     )
                   }}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={
-                    ai.phase !== "ready" ||
-                    !selected ||
-                    !["glsl", "p5"].includes(selected.data.kind)
-                  }
-                  data-cuelume-tap="tap"
-                  onClick={() => {
+                  onSuggest={() => {
                     editorRef.current?.focus()
                     void editorRef.current
                       ?.getAction("editor.action.inlineSuggest.trigger")
                       ?.run()
                   }}
-                >
-                  <Sparkles />
-                  Suggest
-                </Button>
+                />
                 <Button
                   size="sm"
                   disabled={!initialized || recording}
@@ -975,21 +977,8 @@ function Workspace() {
                   <Play />
                   Run
                 </Button>
-              </div>
-              {selected ? (
-                <>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pb-3">
-                    <CategoryIcon name={category[selected.data.kind]} />
-                    <Input
-                      aria-label="Pass name"
-                      className="w-44"
-                      value={selected.data.label}
-                      data-cuelume-type=""
-                      onChange={(e) => patchNode({ label: e.target.value })}
-                    />
-                    <span className="mr-auto text-xs">
-                      {labels[selected.data.kind]}
-                    </span>
+                {selected && (
+                  <>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -1041,7 +1030,11 @@ function Workspace() {
                     >
                       <Trash2 />
                     </Button>
-                  </div>
+                  </>
+                )}
+              </div>
+              {selected ? (
+                <>
                   <ResizablePanelGroup
                     orientation="vertical"
                     defaultLayout={storedLayout("nodeart-layout-editor")}

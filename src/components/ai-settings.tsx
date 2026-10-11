@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Sparkles, Download, Square, KeyRound, CircleHelp } from "lucide-react"
+import { Download, Square, KeyRound, CircleHelp } from "lucide-react"
 import { Button } from "./ui/button"
 import {
   Dialog,
@@ -79,12 +79,15 @@ export function AISettings({
   state,
   automatic,
   onAutomatic,
+  open,
+  onOpenChange,
 }: {
   state: AIState
   automatic: boolean
   onAutomatic: (enabled: boolean) => void
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const [provider, setProvider] = useState<"local" | "mistral">(() =>
     preference("nodeart-ai-provider", "local") === "mistral"
       ? "mistral"
@@ -129,22 +132,7 @@ export function AISettings({
   const same = state.loaded?.model === model && state.loaded.device === device
   return (
     <TooltipProvider>
-      <Button
-        variant="secondary"
-        size="sm"
-        data-cuelume-tap="open"
-        onClick={() => setOpen(true)}
-      >
-        <Sparkles /> AI completion
-        {state.phase === "error"
-          ? " · error"
-          : state.phase === "generating"
-            ? " · generating"
-            : loaded
-              ? " · on"
-              : ""}
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-sm">
           <DialogTitle>AI completion</DialogTitle>
           <DialogDescription className="sr-only">
