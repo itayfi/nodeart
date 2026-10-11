@@ -721,6 +721,7 @@ code {
 [data-slot="dropdown-menu-content"],
 [data-slot="dropdown-menu-sub-content"],
 [data-slot="dialog-content"],
+[data-slot="tooltip-content"],
 .toast {
   color: var(--ink);
   background: var(--panel-surface);
